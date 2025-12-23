@@ -72,6 +72,10 @@
         .btn-success {
             background: #28a745;
         }
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
         .loading { 
             display: none; 
             text-align: center; 
@@ -175,6 +179,20 @@
             margin-bottom: 20px;
             border-left: 4px solid #2a5298;
         }
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -195,20 +213,24 @@
             <div class="input-group">
                 <label for="stocksInput">Stocks to Scan (comma separated, use .NS suffix):</label>
                 <input type="text" id="stocksInput" 
-                       value="RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS">
-                <p class="help-text">Example: RELIANCE.NS, TCS.NS, INFY.NS. Use .NS for National Stock Exchange.</p>
+                       value="RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS,KOTAKBANK.NS,AXISBANK.NS,SBIN.NS,WIPRO.NS,TATAMOTORS.NS,BAJFINANCE.NS">
+                <p class="help-text">Example: RELIANCE.NS, TCS.NS, INFY.NS. Use .NS for National Stock Exchange. (Max 25 stocks per scan)</p>
             </div>
             
             <div>
                 <button class="btn" onclick="startScan()">🚀 Start Scanning</button>
                 <button class="btn btn-secondary" onclick="testWithSample()">🧪 Test with Sample Data</button>
                 <button class="btn btn-success" onclick="checkAPI()">🔧 Check API Connection</button>
+                <button class="btn btn-warning" onclick="scanAllStocksBatch()">📊 Scan All 200+ Stocks</button>
             </div>
             
             <div id="loading" class="loading">
                 <div class="spinner"></div>
                 <div style="font-size: 18px; margin-bottom: 10px; font-weight: 600;">⏳ Scanning stocks...</div>
-                <div style="color: #6c757d;">This may take 10-20 seconds...</div>
+                <div style="color: #6c757d;" id="loadingText">This may take 10-20 seconds...</div>
+                <div class="progress-bar" id="progressBarContainer" style="display: none;">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
             </div>
             
             <div id="statusMessage" class="status"></div>
@@ -217,6 +239,7 @@
         <div id="resultsCard" class="card results-container">
             <h2>📊 Scan Results</h2>
             <p><strong>Patterns Found:</strong> <span id="resultCount">0</span> stocks</p>
+            <p><strong>Total Scanned:</strong> <span id="totalScanned">0</span> stocks</p>
             <p><strong>Scan Time:</strong> <span id="scanTime">-</span></p>
             
             <div id="resultsTable">
@@ -229,6 +252,7 @@
                             <th>V Pattern</th>
                             <th>U Pattern</th>
                             <th>Volume</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
@@ -249,78 +273,141 @@
             <p>© 2024 IncomePlus.in - Stock Volume Pattern Scanner</p>
             <p style="margin-top: 10px; font-size: 14px;">
                 Data Source: Yahoo Finance via yfinance | 
-                const API_BASE = window.location.hostname === 'localhost' 
-    ? "http://localhost:5000" 
-    : "https://web-production-1b0f1.up.railway.app";
-                <span id="lastUpdate">Last updated: -</span>
+                API: <span id="apiUrl">https://web-production-1b0f1.up.railway.app</span>
+                <span id="lastUpdate"> | Last updated: -</span>
             </p>
         </footer>
     </div>
 
     <script>
         // API base URL
-        // Change this line in your index.html:
-const API_BASE = "https://web-production-1b0f1.up.railway.app";
+        const API_BASE = "https://web-production-1b0f1.up.railway.app";
         let lastScanTime = null;
+        let batchScanInProgress = false;
         
         // Check API status on page load
         window.onload = function() {
             checkAPI();
         };
 
-        
-// Add this function to scan ALL stocks in batches
-async function scanAllStocksBatch() {
-    const resultsContainer = document.getElementById('resultsBody');
-    resultsContainer.innerHTML = '';
-    document.getElementById('loading').style.display = 'block';
-    showStatus('Starting batch scan of all stocks...', 'success');
-    
-    let allResults = [];
-    let page = 0;
-    const pageSize = 20;
-    
-    try {
-        while (true) {
-            const response = await fetch(`${API_BASE}/api/scan-all?page=${page}&page_size=${pageSize}`);
-            const data = await response.json();
+        // Function to update results table
+        function updateResultsTable(results) {
+            const resultsBody = document.getElementById('resultsBody');
+            const patternsFound = results.filter(r => r.v_pattern || r.u_pattern).length;
             
-            if (!data.success || !data.results || data.results.length === 0) {
-                break;
+            document.getElementById('resultCount').textContent = patternsFound;
+            document.getElementById('totalScanned').textContent = results.length;
+            
+            resultsBody.innerHTML = '';
+            
+            if (results.length > 0) {
+                document.getElementById('noResults').style.display = 'none';
+                document.getElementById('resultsTable').style.display = 'block';
+                
+                // Sort: patterns first, then alphabetically
+                const sortedResults = [...results].sort((a, b) => {
+                    const aHasPattern = a.v_pattern || a.u_pattern;
+                    const bHasPattern = b.v_pattern || b.u_pattern;
+                    if (aHasPattern && !bHasPattern) return -1;
+                    if (!aHasPattern && bHasPattern) return 1;
+                    return a.symbol.localeCompare(b.symbol);
+                });
+                
+                sortedResults.forEach(stock => {
+                    const row = document.createElement('tr');
+                    const hasPattern = stock.v_pattern || stock.u_pattern;
+                    
+                    row.innerHTML = `
+                        <td><strong>${stock.symbol}</strong></td>
+                        <td>₹${stock.price ? stock.price.toFixed(2) : '0.00'}</td>
+                        <td style="color: ${stock.change_percent >= 0 ? '#28a745' : '#dc3545'}; font-weight: 600;">
+                            ${stock.change_percent >= 0 ? '+' : ''}${stock.change_percent ? stock.change_percent.toFixed(2) : '0.00'}%
+                        </td>
+                        <td class="${stock.v_pattern ? 'pattern-yes' : 'pattern-no'}">
+                            ${stock.v_pattern ? '✅ V Pattern' : '❌ No V'}
+                        </td>
+                        <td class="${stock.u_pattern ? 'pattern-yes' : 'pattern-no'}">
+                            ${stock.u_pattern ? '✅ U Pattern' : '❌ No U'}
+                        </td>
+                        <td>${stock.volume ? stock.volume.toLocaleString() : 'N/A'}</td>
+                        <td style="color: ${hasPattern ? '#28a745' : '#6c757d'}; font-weight: ${hasPattern ? 'bold' : 'normal'}">
+                            ${hasPattern ? '✅ PATTERN' : '⏸️ No pattern'}
+                        </td>
+                    `;
+                    
+                    resultsBody.appendChild(row);
+                });
+            } else {
+                document.getElementById('resultsTable').style.display = 'none';
+                document.getElementById('noResults').style.display = 'block';
             }
             
-            allResults = allResults.concat(data.results);
-            
-            // Update UI with current results
-            updateResultsTable(allResults);
-            document.getElementById('resultCount').textContent = allResults.filter(r => r.v_pattern || r.u_pattern).length;
-            document.getElementById('scanTime').textContent = new Date().toLocaleTimeString();
-            
-            showStatus(`Scanned ${(page + 1) * pageSize} of ~200 stocks...`, 'success');
-            
-            if (!data.has_next_page) {
-                break;
-            }
-            
-            page++;
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between pages
+            document.getElementById('resultsCard').style.display = 'block';
         }
         
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('resultsCard').style.display = 'block';
-        
-        const patternsFound = allResults.filter(r => r.v_pattern || r.u_pattern).length;
-        showStatus(`✅ Batch scan complete! Found ${patternsFound} patterns in ${allResults.length} stocks.`, 'success');
-        
-    } catch (error) {
-        document.getElementById('loading').style.display = 'none';
-        showStatus('Error during batch scan: ' + error.message, 'error');
-    }
-}
-
-// Add a button to your HTML for batch scanning
-// Add this button next to other buttons:
-// <button class="btn btn-success" onclick="scanAllStocksBatch()">📊 Scan All 200+ Stocks</button>
+        // Scan ALL stocks in batches
+        async function scanAllStocksBatch() {
+            if (batchScanInProgress) {
+                showStatus('Batch scan already in progress!', 'error');
+                return;
+            }
+            
+            batchScanInProgress = true;
+            const resultsContainer = document.getElementById('resultsBody');
+            resultsContainer.innerHTML = '';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('progressBarContainer').style.display = 'block';
+            showStatus('Starting batch scan of all 200+ stocks...', 'success');
+            
+            let allResults = [];
+            let page = 0;
+            const pageSize = 20;
+            const totalStocks = 200; // Approximate
+            
+            try {
+                while (true) {
+                    // Update progress
+                    const progress = Math.min((page * pageSize) / totalStocks * 100, 100);
+                    document.getElementById('progressFill').style.width = `${progress}%`;
+                    document.getElementById('loadingText').textContent = 
+                        `Scanning page ${page + 1}... (${Math.min((page + 1) * pageSize, totalStocks)}/${totalStocks} stocks)`;
+                    
+                    const response = await fetch(`${API_BASE}/api/scan-all?page=${page}&page_size=${pageSize}`);
+                    const data = await response.json();
+                    
+                    if (!data.success || !data.results || data.results.length === 0) {
+                        break;
+                    }
+                    
+                    allResults = allResults.concat(data.results);
+                    
+                    // Update UI with current results
+                    updateResultsTable(allResults);
+                    document.getElementById('scanTime').textContent = new Date().toLocaleTimeString();
+                    document.getElementById('lastUpdate').textContent = ' | Last updated: ' + new Date().toLocaleTimeString();
+                    
+                    if (!data.has_next_page) {
+                        break;
+                    }
+                    
+                    page++;
+                    await new Promise(resolve => setTimeout(resolve, 1500)); // Wait 1.5 seconds between pages
+                }
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('progressBarContainer').style.display = 'none';
+                
+                const patternsFound = allResults.filter(r => r.v_pattern || r.u_pattern).length;
+                showStatus(`✅ Batch scan complete! Found ${patternsFound} patterns in ${allResults.length} stocks.`, 'success');
+                
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('progressBarContainer').style.display = 'none';
+                showStatus('Error during batch scan: ' + error.message, 'error');
+            } finally {
+                batchScanInProgress = false;
+            }
+        }
         
         // Check API connection
         async function checkAPI() {
@@ -332,22 +419,22 @@ async function scanAllStocksBatch() {
                 const response = await fetch(`${API_BASE}/api/health`);
                 if (response.ok) {
                     const data = await response.json();
-                    statusEl.textContent = '✅ Connected (' + data.timestamp + ')';
+                    statusEl.textContent = '✅ Connected';
                     statusEl.style.color = '#28a745';
                     showStatus('API connection successful!', 'success');
                 } else {
                     statusEl.textContent = '❌ Connection failed';
                     statusEl.style.color = '#dc3545';
-                    showStatus('API connection failed. Make sure Flask server is running.', 'error');
+                    showStatus('API connection failed.', 'error');
                 }
             } catch (error) {
                 statusEl.textContent = '❌ Cannot connect to API';
                 statusEl.style.color = '#dc3545';
-                showStatus('Cannot connect to API. Make sure you ran: python api.py', 'error');
+                showStatus('Cannot connect to API.', 'error');
             }
         }
         
-        // Start real scan
+        // Start real scan - FIXED: Send ALL symbols from input
         async function startScan() {
             const stocksInput = document.getElementById('stocksInput').value;
             const symbols = stocksInput.split(',').map(s => s.trim()).filter(s => s);
@@ -360,23 +447,65 @@ async function scanAllStocksBatch() {
             // Show loading
             document.getElementById('loading').style.display = 'block';
             document.getElementById('resultsCard').style.display = 'none';
-            showStatus('Starting scan...', 'success');
+            showStatus(`Starting scan of ${symbols.length} stocks...`, 'success');
             
             try {
-                const response = await fetch(`${API_BASE}/api/scan`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ symbols: symbols })
-                });
+                // Use GET request with query parameters instead of POST
+                const encodedSymbols = encodeURIComponent(symbols.join(','));
+                const response = await fetch(`${API_BASE}/api/scan?symbols=${encodedSymbols}`);
                 
                 const data = await response.json();
                 document.getElementById('loading').style.display = 'none';
                 
                 if (data.success) {
                     lastScanTime = new Date().toLocaleTimeString();
-                    displayResults(data);
+                    document.getElementById('lastUpdate').textContent = ' | Last updated: ' + lastScanTime;
+                    
+                    // Display all results
+                    document.getElementById('resultCount').textContent = data.patterns_found || data.count;
+                    document.getElementById('totalScanned').textContent = data.scanned;
+                    document.getElementById('scanTime').textContent = lastScanTime;
+                    
+                    const resultsBody = document.getElementById('resultsBody');
+                    resultsBody.innerHTML = '';
+                    
+                    if (data.results && data.results.length > 0) {
+                        document.getElementById('noResults').style.display = 'none';
+                        document.getElementById('resultsTable').style.display = 'block';
+                        
+                        data.results.forEach(stock => {
+                            const row = document.createElement('tr');
+                            const hasPattern = stock.v_pattern || stock.u_pattern;
+                            
+                            row.innerHTML = `
+                                <td><strong>${stock.symbol}</strong></td>
+                                <td>₹${stock.price ? stock.price.toFixed(2) : '0.00'}</td>
+                                <td style="color: ${stock.change_percent >= 0 ? '#28a745' : '#dc3545'}; font-weight: 600;">
+                                    ${stock.change_percent >= 0 ? '+' : ''}${stock.change_percent ? stock.change_percent.toFixed(2) : '0.00'}%
+                                </td>
+                                <td class="${stock.v_pattern ? 'pattern-yes' : 'pattern-no'}">
+                                    ${stock.v_pattern ? '✅ V Pattern' : '❌ No V'}
+                                </td>
+                                <td class="${stock.u_pattern ? 'pattern-yes' : 'pattern-no'}">
+                                    ${stock.u_pattern ? '✅ U Pattern' : '❌ No U'}
+                                </td>
+                                <td>${stock.volume ? stock.volume.toLocaleString() : 'N/A'}</td>
+                                <td style="color: ${hasPattern ? '#28a745' : '#6c757d'}; font-weight: ${hasPattern ? 'bold' : 'normal'}">
+                                    ${hasPattern ? '✅ PATTERN' : '⏸️ No pattern'}
+                                </td>
+                            `;
+                            
+                            resultsBody.appendChild(row);
+                        });
+                        
+                        showStatus(`✅ Scan complete! Found ${data.patterns_found || data.count} pattern(s) in ${data.scanned} stocks.`, 'success');
+                    } else {
+                        document.getElementById('resultsTable').style.display = 'none';
+                        document.getElementById('noResults').style.display = 'block';
+                        showStatus(`ℹ️ Scan complete. No patterns found in ${data.scanned} stocks.`, 'success');
+                    }
+                    
+                    document.getElementById('resultsCard').style.display = 'block';
                 } else {
                     showStatus('Scan failed: ' + (data.error || 'Unknown error'), 'error');
                 }
@@ -395,6 +524,7 @@ async function scanAllStocksBatch() {
             const sampleData = {
                 success: true,
                 count: 2,
+                patterns_found: 2,
                 results: [
                     {
                         symbol: "RELIANCE",
@@ -411,59 +541,61 @@ async function scanAllStocksBatch() {
                         v_pattern: false,
                         u_pattern: true,
                         volume: 2365227
+                    },
+                    {
+                        symbol: "INFY",
+                        price: 1650.75,
+                        change_percent: 0.25,
+                        v_pattern: false,
+                        u_pattern: false,
+                        volume: 6592769
                     }
                 ],
-                scanned: 5,
+                scanned: 3,
                 timestamp: new Date().toISOString()
             };
             
             lastScanTime = new Date().toLocaleTimeString();
-            displayResults(sampleData);
-            showStatus('Sample data loaded successfully!', 'success');
-        }
-        
-        // Display results
-        function displayResults(data) {
-            document.getElementById('resultCount').textContent = data.count;
+            document.getElementById('lastUpdate').textContent = ' | Last updated: ' + lastScanTime;
+            
+            // Display sample results
+            document.getElementById('resultCount').textContent = sampleData.patterns_found;
+            document.getElementById('totalScanned').textContent = sampleData.scanned;
             document.getElementById('scanTime').textContent = lastScanTime;
-            document.getElementById('lastUpdate').textContent = 'Last updated: ' + lastScanTime;
             
             const resultsBody = document.getElementById('resultsBody');
             resultsBody.innerHTML = '';
             
-            if (data.count > 0) {
-                document.getElementById('noResults').style.display = 'none';
-                document.getElementById('resultsTable').style.display = 'block';
+            document.getElementById('noResults').style.display = 'none';
+            document.getElementById('resultsTable').style.display = 'block';
+            
+            sampleData.results.forEach(stock => {
+                const row = document.createElement('tr');
+                const hasPattern = stock.v_pattern || stock.u_pattern;
                 
-                data.results.forEach(stock => {
-                    const row = document.createElement('tr');
-                    
-                    row.innerHTML = `
-                        <td><strong>${stock.symbol}</strong></td>
-                        <td>₹${stock.price.toFixed(2)}</td>
-                        <td style="color: ${stock.change_percent >= 0 ? '#28a745' : '#dc3545'}; font-weight: 600;">
-                            ${stock.change_percent >= 0 ? '+' : ''}${stock.change_percent}%
-                        </td>
-                        <td class="${stock.v_pattern ? 'pattern-yes' : 'pattern-no'}">
-                            ${stock.v_pattern ? '✅ V Pattern' : '❌ No V'}
-                        </td>
-                        <td class="${stock.u_pattern ? 'pattern-yes' : 'pattern-no'}">
-                            ${stock.u_pattern ? '✅ U Pattern' : '❌ No U'}
-                        </td>
-                        <td>${stock.volume.toLocaleString()}</td>
-                    `;
-                    
-                    resultsBody.appendChild(row);
-                });
+                row.innerHTML = `
+                    <td><strong>${stock.symbol}</strong></td>
+                    <td>₹${stock.price.toFixed(2)}</td>
+                    <td style="color: ${stock.change_percent >= 0 ? '#28a745' : '#dc3545'}; font-weight: 600;">
+                        ${stock.change_percent >= 0 ? '+' : ''}${stock.change_percent}%
+                    </td>
+                    <td class="${stock.v_pattern ? 'pattern-yes' : 'pattern-no'}">
+                        ${stock.v_pattern ? '✅ V Pattern' : '❌ No V'}
+                    </td>
+                    <td class="${stock.u_pattern ? 'pattern-yes' : 'pattern-no'}">
+                        ${stock.u_pattern ? '✅ U Pattern' : '❌ No U'}
+                    </td>
+                    <td>${stock.volume.toLocaleString()}</td>
+                    <td style="color: ${hasPattern ? '#28a745' : '#6c757d'}; font-weight: ${hasPattern ? 'bold' : 'normal'}">
+                        ${hasPattern ? '✅ PATTERN' : '⏸️ No pattern'}
+                    </td>
+                `;
                 
-                showStatus(`✅ Scan complete! Found ${data.count} pattern(s) in ${data.scanned} stocks.`, 'success');
-            } else {
-                document.getElementById('resultsTable').style.display = 'none';
-                document.getElementById('noResults').style.display = 'block';
-                showStatus(`ℹ️ Scan complete. No patterns found in ${data.scanned} stocks.`, 'success');
-            }
+                resultsBody.appendChild(row);
+            });
             
             document.getElementById('resultsCard').style.display = 'block';
+            showStatus('Sample data loaded successfully!', 'success');
         }
         
         // Show status message
@@ -487,8 +619,4 @@ async function scanAllStocksBatch() {
         });
     </script>
 </body>
-
 </html>
-
-
-
