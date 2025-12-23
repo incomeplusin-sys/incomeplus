@@ -1,7 +1,7 @@
 """
 INCOMEPLUS WEB API - FLASK VERSION
 Optimized for Railway deployment with GitHub Pages frontend
-IMPROVED PATTERN DETECTION VERSION
+BATCH SCANNING VERSION - HANDLES 200+ STOCKS
 """
 
 import os
@@ -30,6 +30,50 @@ CORS(app, resources={
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
+
+# ========== ALL YOUR STOCKS LIST ==========
+ALL_INDIAN_STOCKS = [
+    "360ONE.NS", "ABB.NS", "APLAPOLLO.NS", "AUBANK.NS", "ADANIENSOL.NS",
+    "ADANIENT.NS", "ADANIGREEN.NS", "ADANIPORTS.NS", "ABCAPITAL.NS", "ALKEM.NS",
+    "AMBER.NS", "AMBUJACEM.NS", "ANGELONE.NS", "APOLLOHOSP.NS", "ASHOKLEY.NS",
+    "ASIANPAINT.NS", "ASTRAL.NS", "AUROPHARMA.NS", "DMART.NS", "AXISBANK.NS",
+    "BSE.NS", "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BANDHANBNK.NS",
+    "BANKBARODA.NS", "BANKINDIA.NS", "BDL.NS", "BEL.NS", "BHARATFORG.NS",
+    "BHEL.NS", "BPCL.NS", "BHARTIARTL.NS", "BIOCON.NS", "BLUESTARCO.NS",
+    "BOSCHLTD.NS", "BRITANNIA.NS", "CGPOWER.NS", "CANBK.NS", "CDSL.NS",
+    "CHOLAFIN.NS", "CIPLA.NS", "COALINDIA.NS", "COFORGE.NS", "COLPAL.NS",
+    "CAMS.NS", "CONCOR.NS", "CROMPTON.NS", "CUMMINSIND.NS", "CYIENT.NS",
+    "DLF.NS", "DABUR.NS", "DALBHARAT.NS", "DELHIVERY.NS", "DIVISLAB.NS",
+    "DIXON.NS", "DRREDDY.NS", "ETERNAL.NS", "EICHERMOT.NS", "EXIDEIND.NS",
+    "NYKAA.NS", "FORTIS.NS", "GAIL.NS", "GMRAIRPORT.NS", "GLENMARK.NS",
+    "GODREJCP.NS", "GODREJPROP.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCAMC.NS",
+    "HDFCBANK.NS", "HDFCLIFE.NS", "HFCL.NS", "HAVELLS.NS", "HEROMOTOCO.NS",
+    "HINDALCO.NS", "HAL.NS", "HINDPETRO.NS", "HINDUNILVR.NS", "HINDZINC.NS",
+    "POWERINDIA.NS", "HUDCO.NS", "ICICIBANK.NS", "ICICIGI.NS", "ICICIPRULI.NS",
+    "IDFCFIRSTB.NS", "IIFL.NS", "ITC.NS", "INDIANB.NS", "IEX.NS", "IOC.NS",
+    "IRCTC.NS", "IRFC.NS", "IREDA.NS", "IGL.NS", "INDUSTOWER.NS", "INDUSINDBK.NS",
+    "NAUKRI.NS", "INFY.NS", "INOXWIND.NS", "INDIGO.NS", "JINDALSTEL.NS",
+    "JSWENERGY.NS", "JSWSTEEL.NS", "JIOFIN.NS", "JUBLFOOD.NS", "KEI.NS",
+    "KPITTECH.NS", "KALYANKJIL.NS", "KAYNES.NS", "KFINTECH.NS", "KOTAKBANK.NS",
+    "LTF.NS", "LICHSGFIN.NS", "LTIM.NS", "LT.NS", "LAURUSLABS.NS", "LICI.NS",
+    "LODHA.NS", "LUPIN.NS", "M&M.NS", "MANAPPURAM.NS", "MANKIND.NS", "MARICO.NS",
+    "MARUTI.NS", "MFSL.NS", "MAXHEALTH.NS", "MAZDOCK.NS", "MPHASIS.NS", "MCX.NS",
+    "MUTHOOTFIN.NS", "NBCC.NS", "NCC.NS", "NHPC.NS", "NMDC.NS", "NTPC.NS",
+    "NATIONALUM.NS", "NESTLEIND.NS", "NUVAMA.NS", "OBEROIRLTY.NS", "ONGC.NS",
+    "OIL.NS", "PAYTM.NS", "OFSS.NS", "POLICYBZR.NS", "PGEL.NS", "PIIND.NS",
+    "PNBHOUSING.NS", "PAGEIND.NS", "PATANJALI.NS", "PERSISTENT.NS", "PETRONET.NS",
+    "PIDILITIND.NS", "PPLPHARMA.NS", "POLYCAB.NS", "PFC.NS", "POWERGRID.NS",
+    "PRESTIGE.NS", "PNB.NS", "RBLBANK.NS", "RECLTD.NS", "RVNL.NS", "RELIANCE.NS",
+    "SBICARD.NS", "SBILIFE.NS", "SHREECEM.NS", "SRF.NS", "SAMMAANCAP.NS",
+    "MOTHERSON.NS", "SHRIRAMFIN.NS", "SIEMENS.NS", "SOLARINDS.NS", "SONACOMS.NS",
+    "SBIN.NS", "SAIL.NS", "SUNPHARMA.NS", "SUPREMEIND.NS", "SUZLON.NS", "SYNGENE.NS",
+    "TATACONSUM.NS", "TITAGARH.NS", "TVSMOTOR.NS", "TCS.NS", "TATAELXSI.NS",
+    "TMPV.NS", "TATAPOWER.NS", "TATASTEEL.NS", "TATATECH.NS", "TECHM.NS",
+    "FEDERALBNK.NS", "INDHOTEL.NS", "PHOENIXLTD.NS", "TITAN.NS", "TORNTPHARM.NS",
+    "TORNTPOWER.NS", "TRENT.NS", "TIINDIA.NS", "UNOMINDA.NS", "UPL.NS",
+    "ULTRACEMCO.NS", "UNIONBANK.NS", "UNITDSPR.NS", "VBL.NS", "VEDL.NS",
+    "IDEA.NS", "VOLTAS.NS", "WIPRO.NS", "YESBANK.NS", "ZYDUSLIFE.NS"
+]
 
 # ========== IMPROVED PATTERN DETECTION FUNCTIONS ==========
 def detect_v_pattern(volumes):
@@ -107,7 +151,7 @@ def detect_u_pattern(volumes):
             min_volume < last_6[0] * 0.7 and 
             min_volume < last_6[1] * 0.7)
 
-# ========== HELPER FUNCTION FOR SYMBOL FORMATTING ==========
+# ========== HELPER FUNCTIONS ==========
 def normalize_symbol(symbol):
     """Try different symbol formats for Indian stocks"""
     symbol = symbol.strip().upper()
@@ -118,6 +162,74 @@ def normalize_symbol(symbol):
     
     # Already has suffix
     return [symbol]
+
+def scan_single_stock(symbol):
+    """Scan a single stock (for batch scanning)"""
+    try:
+        symbol_variations = normalize_symbol(symbol)
+        stock_data = None
+        used_symbol = symbol
+        
+        for sym_var in symbol_variations:
+            try:
+                stock_data = yf.download(
+                    sym_var, 
+                    period="1mo", 
+                    progress=False,
+                    timeout=8
+                )
+                
+                if stock_data is not None and not stock_data.empty and len(stock_data) >= 10:
+                    used_symbol = sym_var
+                    break
+            except:
+                continue
+        
+        # Check if we got data
+        if stock_data is None or stock_data.empty or len(stock_data) < 10:
+            return {
+                "symbol": symbol,
+                "error": "insufficient data",
+                "success": False
+            }
+        
+        # Get volumes and prices
+        volumes = stock_data['Volume'].values
+        closes = stock_data['Close'].values
+        
+        # Detect patterns
+        v_pattern = detect_v_pattern(volumes)
+        u_pattern = detect_u_pattern(volumes)
+        
+        # Calculate price change
+        current_price = float(closes[-1])
+        prev_price = float(closes[-2]) if len(closes) > 1 else current_price
+        price_change = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
+        
+        # Prepare result
+        clean_symbol = used_symbol.replace('.NS', '').replace('.BO', '')
+        
+        return {
+            "symbol": clean_symbol,
+            "original_symbol": symbol,
+            "used_symbol": used_symbol,
+            "price": round(current_price, 2),
+            "change_percent": round(price_change, 2),
+            "v_pattern": v_pattern,
+            "u_pattern": u_pattern,
+            "volume": int(volumes[-1]),
+            "data_points": len(stock_data),
+            "last_updated": datetime.now().isoformat(),
+            "status": "pattern_found" if (v_pattern or u_pattern) else "no_pattern",
+            "success": True
+        }
+        
+    except Exception as e:
+        return {
+            "symbol": symbol,
+            "error": str(e)[:100],
+            "success": False
+        }
 
 # ========== DEMO MODE FOR TESTING ==========
 DEMO_MODE = os.environ.get('DEMO_MODE', 'false').lower() == 'true'
@@ -143,47 +255,15 @@ def ensure_patterns_for_demo(symbol, v_pattern, u_pattern):
     return v_pattern, u_pattern
 
 # ========== API ENDPOINTS ==========
-@app.route('/api/scan-batch', methods=['POST'])
-def scan_batch():
-    """Scan large batches of stocks with pagination"""
-    try:
-        data = request.json
-        symbols = data.get('symbols', [])
-        page = data.get('page', 0)
-        page_size = data.get('page_size', 10)
-        
-        # Calculate which symbols to scan
-        start_idx = page * page_size
-        end_idx = start_idx + page_size
-        symbols_to_scan = symbols[start_idx:end_idx]
-        
-        # Scan this page
-        results = []
-        for symbol in symbols_to_scan:
-            # Your existing scanning logic here
-            result = scan_single_stock(symbol)
-            results.append(result)
-        
-        return jsonify({
-            "success": True,
-            "page": page,
-            "page_size": page_size,
-            "total_symbols": len(symbols),
-            "scanned_this_page": len(symbols_to_scan),
-            "results": results,
-            "has_next_page": end_idx < len(symbols)
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 @app.route('/')
 def home():
     return jsonify({
         "service": "IncomePlus Stock Scanner API",
-        "version": "2.0",
+        "version": "3.0",
         "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'production'),
         "demo_mode": DEMO_MODE,
         "status": "running",
+        "total_stocks_available": len(ALL_INDIAN_STOCKS),
         "frontend_url": "https://incomeplusin-sys.github.io/incomeplus/",
         "backend_url": "https://web-production-1b0f1.up.railway.app",
         "pattern_logic": "IMPROVED - More lenient detection",
@@ -191,6 +271,8 @@ def home():
             "/": "This information",
             "/api/health": "Health check",
             "/api/scan": "Scan stocks (GET with ?symbols= or POST JSON)",
+            "/api/scan-all": "Scan all 200+ Indian stocks (paginated)",
+            "/api/scan-batch": "Batch scan (POST with symbols list)",
             "/api/test": "Test data (no API calls)",
             "/api/test-patterns": "Test pattern detection logic",
             "/api/debug-scan/<symbol>": "Debug scan for specific symbol"
@@ -205,10 +287,217 @@ def health():
         "message": "IncomePlus API is working",
         "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'production'),
         "demo_mode": DEMO_MODE,
-        "pattern_detection": "IMPROVED V2.0",
+        "total_stocks": len(ALL_INDIAN_STOCKS),
+        "pattern_detection": "IMPROVED V3.0",
         "timestamp": datetime.now().isoformat()
     })
 
+@app.route('/api/scan-all', methods=['GET'])
+def scan_all_stocks():
+    """Scan ALL 200+ Indian stocks with pagination"""
+    try:
+        page = int(request.args.get('page', 0))
+        page_size = int(request.args.get('page_size', 20))  # 20 stocks per page
+        
+        # Calculate which symbols to scan
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        symbols_to_scan = ALL_INDIAN_STOCKS[start_idx:end_idx]
+        
+        if not symbols_to_scan:
+            return jsonify({
+                "success": True,
+                "message": "No more stocks to scan",
+                "page": page,
+                "page_size": page_size,
+                "results": [],
+                "has_next_page": False,
+                "timestamp": datetime.now().isoformat()
+            })
+        
+        # Scan this page
+        results = []
+        errors = []
+        
+        for symbol in symbols_to_scan:
+            result = scan_single_stock(symbol)
+            if result.get("success", False):
+                # Apply demo mode if enabled
+                v_pattern, u_pattern = ensure_patterns_for_demo(
+                    symbol, 
+                    result["v_pattern"], 
+                    result["u_pattern"]
+                )
+                result["v_pattern"] = v_pattern
+                result["u_pattern"] = u_pattern
+                result["demo_mode_applied"] = DEMO_MODE and (v_pattern or u_pattern)
+                results.append(result)
+            else:
+                errors.append(result)
+        
+        return jsonify({
+            "success": True,
+            "page": page,
+            "page_size": page_size,
+            "total_stocks": len(ALL_INDIAN_STOCKS),
+            "scanned_this_page": len(symbols_to_scan),
+            "results": results,
+            "errors": errors,
+            "has_next_page": end_idx < len(ALL_INDIAN_STOCKS),
+            "next_page_url": f"{request.base_url}?page={page+1}&page_size={page_size}" if end_idx < len(ALL_INDIAN_STOCKS) else None,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/scan-batch', methods=['POST'])
+def scan_batch():
+    """Batch scan with custom stock list"""
+    try:
+        data = request.json or {}
+        symbols = data.get('symbols', ALL_INDIAN_STOCKS[:20])  # Default to first 20
+        page = data.get('page', 0)
+        page_size = data.get('page_size', 20)
+        
+        # Calculate which symbols to scan
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        symbols_to_scan = symbols[start_idx:end_idx]
+        
+        # Scan this page
+        results = []
+        errors = []
+        
+        for symbol in symbols_to_scan:
+            result = scan_single_stock(symbol)
+            if result.get("success", False):
+                # Apply demo mode if enabled
+                v_pattern, u_pattern = ensure_patterns_for_demo(
+                    symbol, 
+                    result["v_pattern"], 
+                    result["u_pattern"]
+                )
+                result["v_pattern"] = v_pattern
+                result["u_pattern"] = u_pattern
+                result["demo_mode_applied"] = DEMO_MODE and (v_pattern or u_pattern)
+                results.append(result)
+            else:
+                errors.append(result)
+        
+        return jsonify({
+            "success": True,
+            "page": page,
+            "page_size": page_size,
+            "total_symbols": len(symbols),
+            "scanned_this_page": len(symbols_to_scan),
+            "results": results,
+            "errors": errors,
+            "has_next_page": end_idx < len(symbols),
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/scan', methods=['GET', 'POST', 'OPTIONS'])
+def scan_stocks():
+    """Main scanning endpoint - for quick scans"""
+    try:
+        # Handle OPTIONS for CORS
+        if request.method == 'OPTIONS':
+            return '', 200
+        
+        # Get symbols from request
+        if request.method == 'POST':
+            data = request.json or {}
+            symbols = data.get('symbols', ALL_INDIAN_STOCKS[:10])  # Default to first 10
+        else:
+            # GET request with query parameter
+            symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS,INFY.NS')
+            symbols = [s.strip() for s in symbols_param.split(',')]
+        
+        # Limit symbols for performance (Railway free tier)
+        symbols = symbols[:25]  # Increased to 25, safe for Railway
+        
+        results = []
+        failed_symbols = []
+        patterns_found = 0
+        
+        print(f"🔍 SCAN REQUEST: {len(symbols)} symbols")
+        print(f"📊 DEMO MODE: {DEMO_MODE}")
+        
+        for symbol in symbols:
+            result = scan_single_stock(symbol)
+            
+            if result.get("success", False):
+                # Apply demo mode if enabled
+                v_pattern, u_pattern = ensure_patterns_for_demo(
+                    symbol, 
+                    result["v_pattern"], 
+                    result["u_pattern"]
+                )
+                result["v_pattern"] = v_pattern
+                result["u_pattern"] = u_pattern
+                result["demo_mode_applied"] = DEMO_MODE and (v_pattern or u_pattern)
+                
+                if v_pattern or u_pattern:
+                    patterns_found += 1
+                    result["status"] = "✅ PATTERN FOUND"
+                else:
+                    result["status"] = "⏸️ No pattern"
+                
+                results.append(result)
+                
+                # Log pattern detection
+                if v_pattern or u_pattern:
+                    pattern_type = []
+                    if v_pattern: pattern_type.append("V")
+                    if u_pattern: pattern_type.append("U")
+                    print(f"🎯 PATTERN DETECTED: {result['symbol']} ({' & '.join(pattern_type)})")
+            else:
+                failed_symbols.append(result)
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "count": len(results),
+            "patterns_found": patterns_found,
+            "results": results,
+            "scanned": len(symbols),
+            "failed": failed_symbols,
+            "scan_summary": {
+                "total_stocks": len(symbols),
+                "successful_scans": len(results),
+                "patterns_detected": patterns_found,
+                "success_rate": f"{(len(results)/len(symbols)*100):.1f}%" if len(symbols) > 0 else "0%",
+                "pattern_rate": f"{(patterns_found/len(results)*100):.1f}%" if len(results) > 0 else "0%"
+            },
+            "demo_mode": DEMO_MODE,
+            "note": "🎯 Patterns found! Enable DEMO_MODE for consistent pattern detection." if patterns_found > 0 else "No patterns detected. Try DEMO_MODE=true",
+            "timestamp": datetime.now().isoformat(),
+            "api_version": "3.0"
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"❌ FATAL ERROR: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)[:200],
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+# ========== OTHER ENDPOINTS (keep as before) ==========
 @app.route('/api/debug-scan/<symbol>', methods=['GET'])
 def debug_scan(symbol):
     """Debug endpoint to see exactly what data we're getting"""
@@ -340,7 +629,7 @@ def test_patterns():
         })
     
     return jsonify({
-        "pattern_test_suite": "IncomePlus Pattern Detection v2.0",
+        "pattern_test_suite": "IncomePlus Pattern Detection v3.0",
         "results": results,
         "summary": {
             "total_tests": len(results),
@@ -352,146 +641,6 @@ def test_patterns():
         "note": "Enable DEMO_MODE=true in Railway Variables to see patterns in scans",
         "timestamp": datetime.now().isoformat()
     })
-
-@app.route('/api/scan', methods=['GET', 'POST', 'OPTIONS'])
-def scan_stocks():
-    """Main scanning endpoint - NOW WITH PATTERNS!"""
-    try:
-        # Handle OPTIONS for CORS
-        if request.method == 'OPTIONS':
-            return '', 200
-        
-        # Get symbols from request
-        if request.method == 'POST':
-            data = request.json or {}
-            symbols = data.get('symbols', ["RELIANCE.NS", "TCS.NS", "INFY.NS"])
-        else:
-            # GET request with query parameter
-            symbols_param = request.args.get('symbols', "RELIANCE.NS,TCS.NS,INFY.NS")
-            symbols = [s.strip() for s in symbols_param.split(',')]
-        
-        # Limit symbols for performance
-        symbols = symbols[:209]
-        
-        results = []
-        failed_symbols = []
-        patterns_found = 0
-        
-        print(f"🔍 SCAN REQUEST: {symbols}")
-        print(f"📊 DEMO MODE: {DEMO_MODE}")
-        
-        for symbol in symbols:
-            try:
-                # Try different symbol formats
-                symbol_variations = normalize_symbol(symbol)
-                stock_data = None
-                used_symbol = symbol
-                
-                for sym_var in symbol_variations:
-                    try:
-                        stock_data = yf.download(
-                            sym_var, 
-                            period="1mo", 
-                            progress=False,
-                            timeout=8
-                        )
-                        
-                        if stock_data is not None and not stock_data.empty and len(stock_data) >= 10:
-                            used_symbol = sym_var
-                            break
-                    except:
-                        continue
-                
-                # Check if we got data
-                if stock_data is None or stock_data.empty or len(stock_data) < 10:
-                    failed_symbols.append({
-                        "symbol": symbol, 
-                        "error": "insufficient data"
-                    })
-                    continue
-                
-                # Get volumes and prices
-                volumes = stock_data['Volume'].values
-                closes = stock_data['Close'].values
-                
-                # Detect patterns
-                v_pattern = detect_v_pattern(volumes)
-                u_pattern = detect_u_pattern(volumes)
-                
-                # Apply demo mode if enabled
-                v_pattern, u_pattern = ensure_patterns_for_demo(symbol, v_pattern, u_pattern)
-                
-                # Calculate price change
-                current_price = float(closes[-1])
-                prev_price = float(closes[-2]) if len(closes) > 1 else current_price
-                price_change = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
-                
-                # Check if pattern found
-                pattern_found = v_pattern or u_pattern
-                if pattern_found:
-                    patterns_found += 1
-                
-                # Prepare result
-                clean_symbol = used_symbol.replace('.NS', '').replace('.BO', '')
-                
-                result = {
-                    "symbol": clean_symbol,
-                    "price": round(current_price, 2),
-                    "change_percent": round(price_change, 2),
-                    "v_pattern": v_pattern,
-                    "u_pattern": u_pattern,
-                    "volume": int(volumes[-1]),
-                    "data_points": len(stock_data),
-                    "last_updated": datetime.now().isoformat(),
-                    "status": "✅ PATTERN FOUND" if pattern_found else "⏸️ No pattern",
-                    "demo_mode": DEMO_MODE and pattern_found
-                }
-                results.append(result)
-                
-                # Log pattern detection
-                if pattern_found:
-                    pattern_type = []
-                    if v_pattern: pattern_type.append("V")
-                    if u_pattern: pattern_type.append("U")
-                    print(f"🎯 PATTERN DETECTED: {clean_symbol} ({' & '.join(pattern_type)})")
-                    
-            except Exception as e:
-                failed_symbols.append({
-                    "symbol": symbol, 
-                    "error": str(e)[:100]  # Limit error length
-                })
-                continue
-        
-        # Prepare response
-        response = {
-            "success": True,
-            "count": len(results),
-            "patterns_found": patterns_found,
-            "results": results,
-            "scanned": len(symbols),
-            "failed": failed_symbols,
-            "scan_summary": {
-                "total_stocks": len(symbols),
-                "successful_scans": len(results),
-                "patterns_detected": patterns_found,
-                "success_rate": f"{(len(results)/len(symbols)*100):.1f}%",
-                "pattern_rate": f"{(patterns_found/len(results)*100):.1f}%" if len(results) > 0 else "0%"
-            },
-            "demo_mode": DEMO_MODE,
-            "note": "🎯 Patterns found! Enable DEMO_MODE for consistent pattern detection." if patterns_found > 0 else "No patterns detected. Try DEMO_MODE=true",
-            "timestamp": datetime.now().isoformat(),
-            "api_version": "2.0"
-        }
-        
-        return jsonify(response)
-        
-    except Exception as e:
-        print(f"❌ FATAL ERROR: {str(e)}")
-        return jsonify({
-            "success": False,
-            "error": str(e)[:200],
-            "timestamp": datetime.now().isoformat()
-        }), 500
 
 @app.route('/api/test', methods=['GET'])
 def test_scan():
@@ -551,16 +700,18 @@ def test_scan():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     
-    print("🚀 IncomePlus API v2.0 Starting...")
+    print("🚀 IncomePlus API v3.0 Starting...")
     print(f"📍 Port: {port}")
     print(f"📍 Environment: {os.environ.get('RAILWAY_ENVIRONMENT', 'production')}")
     print(f"📍 Demo Mode: {DEMO_MODE}")
+    print(f"📍 Total Stocks: {len(ALL_INDIAN_STOCKS)}")
     print(f"📍 Frontend: https://incomeplusin-sys.github.io/incomeplus/")
     print("=" * 60)
-    print("📊 Pattern Detection: IMPROVED V2.0")
+    print("📊 Pattern Detection: IMPROVED V3.0")
     print("   • More lenient V-pattern detection")
     print("   • Real-world volume pattern matching")
     print("   • Demo mode for testing patterns")
+    print("   • Batch scanning for 200+ stocks")
     print("=" * 60)
     
     app.run(host='0.0.0.0', port=port, debug=False)
