@@ -143,6 +143,39 @@ def ensure_patterns_for_demo(symbol, v_pattern, u_pattern):
     return v_pattern, u_pattern
 
 # ========== API ENDPOINTS ==========
+@app.route('/api/scan-batch', methods=['POST'])
+def scan_batch():
+    """Scan large batches of stocks with pagination"""
+    try:
+        data = request.json
+        symbols = data.get('symbols', [])
+        page = data.get('page', 0)
+        page_size = data.get('page_size', 10)
+        
+        # Calculate which symbols to scan
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        symbols_to_scan = symbols[start_idx:end_idx]
+        
+        # Scan this page
+        results = []
+        for symbol in symbols_to_scan:
+            # Your existing scanning logic here
+            result = scan_single_stock(symbol)
+            results.append(result)
+        
+        return jsonify({
+            "success": True,
+            "page": page,
+            "page_size": page_size,
+            "total_symbols": len(symbols),
+            "scanned_this_page": len(symbols_to_scan),
+            "results": results,
+            "has_next_page": end_idx < len(symbols)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 @app.route('/')
 def home():
     return jsonify({
