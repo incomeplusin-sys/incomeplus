@@ -6,18 +6,20 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 env.bak/
 venv.bak/
 
-# Data files
-*.csv
-*.xlsx
-*.pkl
-*.db
-*.sqlite3
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# System
+# OS
 .DS_Store
 Thumbs.db
+
+# Railway
 *.log
