@@ -432,7 +432,61 @@ const API_BASE = "https://web-production-1b0f1.up.railway.app";
             }
         });
     </script>
+
+// Add this function to scan ALL stocks in batches
+async function scanAllStocksBatch() {
+    const resultsContainer = document.getElementById('resultsBody');
+    resultsContainer.innerHTML = '';
+    document.getElementById('loading').style.display = 'block';
+    showStatus('Starting batch scan of all stocks...', 'success');
+    
+    let allResults = [];
+    let page = 0;
+    const pageSize = 20;
+    
+    try {
+        while (true) {
+            const response = await fetch(`${API_BASE}/api/scan-all?page=${page}&page_size=${pageSize}`);
+            const data = await response.json();
+            
+            if (!data.success || !data.results || data.results.length === 0) {
+                break;
+            }
+            
+            allResults = allResults.concat(data.results);
+            
+            // Update UI with current results
+            updateResultsTable(allResults);
+            document.getElementById('resultCount').textContent = allResults.filter(r => r.v_pattern || r.u_pattern).length;
+            document.getElementById('scanTime').textContent = new Date().toLocaleTimeString();
+            
+            showStatus(`Scanned ${(page + 1) * pageSize} of ~200 stocks...`, 'success');
+            
+            if (!data.has_next_page) {
+                break;
+            }
+            
+            page++;
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between pages
+        }
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('resultsCard').style.display = 'block';
+        
+        const patternsFound = allResults.filter(r => r.v_pattern || r.u_pattern).length;
+        showStatus(`✅ Batch scan complete! Found ${patternsFound} patterns in ${allResults.length} stocks.`, 'success');
+        
+    } catch (error) {
+        document.getElementById('loading').style.display = 'none';
+        showStatus('Error during batch scan: ' + error.message, 'error');
+    }
+}
+
+// Add a button to your HTML for batch scanning
+// Add this button next to other buttons:
+// <button class="btn btn-success" onclick="scanAllStocksBatch()">📊 Scan All 200+ Stocks</button>
 </body>
 
 </html>
+
 
