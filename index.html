@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IncomePlus - Stock Volume Pattern Scanner</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        header { 
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center;
+        }
+        h1 { 
+            font-size: 2.8rem; 
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .subtitle { 
+            font-size: 1.3rem; 
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+        .card { 
+            background: white; 
+            border-radius: 10px; 
+            padding: 25px; 
+            margin: 25px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+            border: 1px solid #eaeaea;
+        }
+        h2 { 
+            color: #2a5298; 
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+        .btn { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            border: none; 
+            padding: 14px 30px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        .btn:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-success {
+            background: #28a745;
+        }
+        .loading { 
+            display: none; 
+            text-align: center; 
+            padding: 30px; 
+        }
+        .spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 20px;
+        }
+        th, td { 
+            padding: 15px; 
+            text-align: left; 
+            border-bottom: 1px solid #eaeaea;
+        }
+        th { 
+            background: #f8f9fa; 
+            font-weight: 600;
+            color: #2a5298;
+        }
+        tr:hover { 
+            background: #f5f7ff; 
+        }
+        .pattern-yes { 
+            color: #28a745; 
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        .pattern-no { 
+            color: #dc3545;
+        }
+        .status { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 15px 0; 
+        }
+        .status-success { 
+            background: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb;
+        }
+        .status-error { 
+            background: #f8d7da; 
+            color: #721c24; 
+            border: 1px solid #f5c6cb;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        label { 
+            display: block; 
+            margin-bottom: 10px; 
+            font-weight: 600;
+            color: #495057;
+        }
+        input[type="text"] { 
+            width: 100%; 
+            padding: 14px; 
+            border: 2px solid #eaeaea; 
+            border-radius: 8px; 
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        input[type="text"]:focus { 
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+        .help-text {
+            margin-top: 8px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        footer { 
+            margin-top: 40px; 
+            text-align: center; 
+            color: #6c757d; 
+            padding: 25px;
+            border-top: 1px solid #eaeaea;
+        }
+        .results-container {
+            display: none;
+        }
+        .api-status {
+            background: #e7f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2a5298;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💰 IncomePlus</h1>
+            <p class="subtitle">Advanced Stock Volume Pattern Scanner</p>
+            <div class="api-status">
+                <strong>📡 API Status:</strong> 
+                <span id="apiStatus">Checking...</span>
+            </div>
+        </header>
+        
+        <div class="card">
+            <h2>🔍 Volume Pattern Scanner</h2>
+            <p>Scan Indian stocks for V and U volume patterns using Yahoo Finance data.</p>
+            
+            <div class="input-group">
+                <label for="stocksInput">Stocks to Scan (comma separated, use .NS suffix):</label>
+                <input type="text" id="stocksInput" 
+                       value="RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS">
+                <p class="help-text">Example: RELIANCE.NS, TCS.NS, INFY.NS. Use .NS for National Stock Exchange.</p>
+            </div>
+            
+            <div>
+                <button class="btn" onclick="startScan()">🚀 Start Scanning</button>
+                <button class="btn btn-secondary" onclick="testWithSample()">🧪 Test with Sample Data</button>
+                <button class="btn btn-success" onclick="checkAPI()">🔧 Check API Connection</button>
+            </div>
+            
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <div style="font-size: 18px; margin-bottom: 10px; font-weight: 600;">⏳ Scanning stocks...</div>
+                <div style="color: #6c757d;">This may take 10-20 seconds...</div>
+            </div>
+            
+            <div id="statusMessage" class="status"></div>
+        </div>
+        
+        <div id="resultsCard" class="card results-container">
+            <h2>📊 Scan Results</h2>
+            <p><strong>Patterns Found:</strong> <span id="resultCount">0</span> stocks</p>
+            <p><strong>Scan Time:</strong> <span id="scanTime">-</span></p>
+            
+            <div id="resultsTable">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Stock</th>
+                            <th>Price</th>
+                            <th>Change</th>
+                            <th>V Pattern</th>
+                            <th>U Pattern</th>
+                            <th>Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        <!-- Results will appear here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="noResults" style="display: none; text-align: center; padding: 40px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">📭</div>
+                <h3>No Patterns Found</h3>
+                <p>No volume patterns detected in the scanned stocks.</p>
+                <p style="color: #6c757d; margin-top: 10px;">This is normal - volume patterns are rare events.</p>
+            </div>
+        </div>
+        
+        <footer>
+            <p>© 2024 IncomePlus.in - Stock Volume Pattern Scanner</p>
+            <p style="margin-top: 10px; font-size: 14px;">
+                Data Source: Yahoo Finance via yfinance | 
+                API: Running on localhost:5000 | 
+                <span id="lastUpdate">Last updated: -</span>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // API base URL
+        const API_BASE = 'http://localhost:5000';
+        let lastScanTime = null;
+        
+        // Check API status on page load
+        window.onload = function() {
+            checkAPI();
+        };
+        
+        // Check API connection
+        async function checkAPI() {
+            const statusEl = document.getElementById('apiStatus');
+            statusEl.textContent = 'Checking...';
+            statusEl.style.color = '#ffc107';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/health`);
+                if (response.ok) {
+                    const data = await response.json();
+                    statusEl.textContent = '✅ Connected (' + data.timestamp + ')';
+                    statusEl.style.color = '#28a745';
+                    showStatus('API connection successful!', 'success');
+                } else {
+                    statusEl.textContent = '❌ Connection failed';
+                    statusEl.style.color = '#dc3545';
+                    showStatus('API connection failed. Make sure Flask server is running.', 'error');
+                }
+            } catch (error) {
+                statusEl.textContent = '❌ Cannot connect to API';
+                statusEl.style.color = '#dc3545';
+                showStatus('Cannot connect to API. Make sure you ran: python api.py', 'error');
+            }
+        }
+        
+        // Start real scan
+        async function startScan() {
+            const stocksInput = document.getElementById('stocksInput').value;
+            const symbols = stocksInput.split(',').map(s => s.trim()).filter(s => s);
+            
+            if (symbols.length === 0) {
+                showStatus('Please enter at least one stock symbol.', 'error');
+                return;
+            }
+            
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('resultsCard').style.display = 'none';
+            showStatus('Starting scan...', 'success');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/scan`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ symbols: symbols })
+                });
+                
+                const data = await response.json();
+                document.getElementById('loading').style.display = 'none';
+                
+                if (data.success) {
+                    lastScanTime = new Date().toLocaleTimeString();
+                    displayResults(data);
+                } else {
+                    showStatus('Scan failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+                
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showStatus('Error connecting to scanner API: ' + error.message, 'error');
+            }
+        }
+        
+        // Test with sample data (no API call needed)
+        function testWithSample() {
+            showStatus('Loading sample data...', 'success');
+            
+            // Simulate API response
+            const sampleData = {
+                success: true,
+                count: 2,
+                results: [
+                    {
+                        symbol: "RELIANCE",
+                        price: 2850.50,
+                        change_percent: 1.25,
+                        v_pattern: true,
+                        u_pattern: false,
+                        volume: 7506011
+                    },
+                    {
+                        symbol: "TCS",
+                        price: 3850.25,
+                        change_percent: -0.75,
+                        v_pattern: false,
+                        u_pattern: true,
+                        volume: 2365227
+                    }
+                ],
+                scanned: 5,
+                timestamp: new Date().toISOString()
+            };
+            
+            lastScanTime = new Date().toLocaleTimeString();
+            displayResults(sampleData);
+            showStatus('Sample data loaded successfully!', 'success');
+        }
+        
+        // Display results
+        function displayResults(data) {
+            document.getElementById('resultCount').textContent = data.count;
+            document.getElementById('scanTime').textContent = lastScanTime;
+            document.getElementById('lastUpdate').textContent = 'Last updated: ' + lastScanTime;
+            
+            const resultsBody = document.getElementById('resultsBody');
+            resultsBody.innerHTML = '';
+            
+            if (data.count > 0) {
+                document.getElementById('noResults').style.display = 'none';
+                document.getElementById('resultsTable').style.display = 'block';
+                
+                data.results.forEach(stock => {
+                    const row = document.createElement('tr');
+                    
+                    row.innerHTML = `
+                        <td><strong>${stock.symbol}</strong></td>
+                        <td>₹${stock.price.toFixed(2)}</td>
+                        <td style="color: ${stock.change_percent >= 0 ? '#28a745' : '#dc3545'}; font-weight: 600;">
+                            ${stock.change_percent >= 0 ? '+' : ''}${stock.change_percent}%
+                        </td>
+                        <td class="${stock.v_pattern ? 'pattern-yes' : 'pattern-no'}">
+                            ${stock.v_pattern ? '✅ V Pattern' : '❌ No V'}
+                        </td>
+                        <td class="${stock.u_pattern ? 'pattern-yes' : 'pattern-no'}">
+                            ${stock.u_pattern ? '✅ U Pattern' : '❌ No U'}
+                        </td>
+                        <td>${stock.volume.toLocaleString()}</td>
+                    `;
+                    
+                    resultsBody.appendChild(row);
+                });
+                
+                showStatus(`✅ Scan complete! Found ${data.count} pattern(s) in ${data.scanned} stocks.`, 'success');
+            } else {
+                document.getElementById('resultsTable').style.display = 'none';
+                document.getElementById('noResults').style.display = 'block';
+                showStatus(`ℹ️ Scan complete. No patterns found in ${data.scanned} stocks.`, 'success');
+            }
+            
+            document.getElementById('resultsCard').style.display = 'block';
+        }
+        
+        // Show status message
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + (type === 'success' ? 'status-success' : 'status-error');
+            statusEl.style.display = 'block';
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Keyboard shortcut: Ctrl+Enter to scan
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                startScan();
+            }
+        });
+    </script>
+</body>
+</html>
