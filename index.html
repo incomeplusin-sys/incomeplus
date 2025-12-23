@@ -249,7 +249,9 @@
             <p>© 2024 IncomePlus.in - Stock Volume Pattern Scanner</p>
             <p style="margin-top: 10px; font-size: 14px;">
                 Data Source: Yahoo Finance via yfinance | 
-                API: Running on localhost:5000 | 
+                const API_BASE = window.location.hostname === 'localhost' 
+    ? "http://localhost:5000" 
+    : "https://web-production-1b0f1.up.railway.app";
                 <span id="lastUpdate">Last updated: -</span>
             </p>
         </footer>
@@ -430,4 +432,5 @@
         });
     </script>
 </body>
+
 </html>
