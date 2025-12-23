@@ -304,50 +304,79 @@
         };
         
         // ========== ONE-CLICK SCAN ALL FUNCTION ==========
-        async function scanAllStocksNow() {
-            // Show loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('progressBarContainer').style.display = 'block';
-            document.getElementById('loadingText').textContent = '🚀 Scanning ALL 200+ stocks simultaneously...';
-            document.getElementById('progressFill').style.width = '50%';
-            showStatus('Starting mass scan of all Indian stocks... This may take 30-60 seconds.', 'success');
+       // Scan ALL stocks with one click (USING EXISTING ENDPOINTS)
+async function scanAllStocksNow() {
+    // Show loading
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('progressBarContainer').style.display = 'block';
+    document.getElementById('loadingText').textContent = '🚀 Scanning ALL 200+ stocks in batches...';
+    document.getElementById('progressFill').style.width = '0%';
+    showStatus('Starting mass scan of all Indian stocks... This may take 2-3 minutes.', 'success');
+    
+    // Clear previous results
+    document.getElementById('resultsBody').innerHTML = '';
+    document.getElementById('resultsCard').style.display = 'none';
+    
+    let allResults = [];
+    let page = 0;
+    const pageSize = 20;
+    
+    try {
+        while (true) {
+            // Update progress
+            const progress = Math.min((page * pageSize) / 200 * 100, 100);
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            document.getElementById('loadingText').textContent = 
+                `Scanning batch ${page + 1}... (${Math.min((page + 1) * pageSize, 200)}/200 stocks)`;
             
-            // Clear previous results
-            document.getElementById('resultsBody').innerHTML = '';
-            document.getElementById('resultsCard').style.display = 'none';
+            // Use the EXISTING /api/scan-all endpoint
+            const response = await fetch(`${API_BASE}/api/scan-all?page=${page}&page_size=${pageSize}`);
+            
+            // Check if response is valid
+            const responseText = await response.text();
             
             try {
-                const response = await fetch(`${API_BASE}/api/scan-all-fast`);
-                const data = await response.json();
+                const data = JSON.parse(responseText);
                 
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('progressBarContainer').style.display = 'none';
-                document.getElementById('progressFill').style.width = '100%';
-                
-                if (data.success) {
-                    lastScanTime = new Date().toLocaleTimeString();
-                    document.getElementById('lastUpdate').textContent = 'Last updated: ' + lastScanTime;
-                    
-                    // Display results
-                    displayAllResults(data);
-                    
-                    // Show summary
-                    const successRate = ((data.successful / data.total_stocks) * 100).toFixed(1);
-                    showStatus(
-                        `✅ Mass scan complete! ${data.patterns_found} patterns found in ${data.successful} stocks (${successRate}% success rate)`,
-                        'success'
-                    );
-                } else {
-                    showStatus('Mass scan failed: ' + (data.error || 'Unknown error'), 'error');
+                if (!data.success || !data.results) {
+                    break;
                 }
                 
-            } catch (error) {
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('progressBarContainer').style.display = 'none';
-                showStatus('Error during mass scan: ' + error.message, 'error');
+                allResults = allResults.concat(data.results);
+                
+                // Update UI with current results
+                updateResultsTable(allResults);
+                
+                if (!data.has_next_page) {
+                    break;
+                }
+                
+                page++;
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                
+            } catch (parseError) {
+                console.error('JSON Parse Error:', parseError, 'Response:', responseText.substring(0, 200));
+                showStatus('Error parsing response. Please try again.', 'error');
+                break;
             }
         }
         
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('progressBarContainer').style.display = 'none';
+        document.getElementById('progressFill').style.width = '100%';
+        
+        const patternsFound = allResults.filter(r => r.v_pattern || r.u_pattern).length;
+        showStatus(
+            `✅ Mass scan complete! ${patternsFound} patterns found in ${allResults.length} stocks`,
+            'success'
+        );
+        
+    } catch (error) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('progressBarContainer').style.display = 'none';
+        showStatus('Error during mass scan: ' + error.message, 'error');
+    }
+} 
         // Display all results in a compact table
         function displayAllResults(data) {
             document.getElementById('resultCount').textContent = data.patterns_found;
@@ -627,3 +656,4 @@
     </script>
 </body>
 </html>
+
