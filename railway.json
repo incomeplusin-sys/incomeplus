@@ -7,4 +7,6 @@
     "startCommand": "python api.py",
     "restartPolicyType": "ON_FAILURE"
   }
+
 }
+DEMO_MODE=true
