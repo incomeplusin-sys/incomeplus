@@ -1,8 +1,9 @@
 """
 INCOMEPLUS WEB API - FLASK VERSION
-Turn your scanner into a web service
+Optimized for Railway deployment
 """
 
+import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import yfinance as yf
@@ -51,11 +52,13 @@ def home():
     return jsonify({
         "service": "IncomePlus Stock Scanner API",
         "version": "1.0",
+        "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'development'),
         "status": "running",
         "endpoints": {
             "/": "This information",
             "/api/health": "Health check",
-            "/api/scan": "Scan stocks (POST with JSON or GET with ?symbols=)"
+            "/api/scan": "Scan stocks (POST with JSON or GET with ?symbols=)",
+            "/api/test": "Test data (no API calls)"
         },
         "timestamp": datetime.now().isoformat()
     })
@@ -65,6 +68,7 @@ def health():
     return jsonify({
         "status": "healthy",
         "message": "IncomePlus API is working",
+        "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'development'),
         "timestamp": datetime.now().isoformat()
     })
 
@@ -84,17 +88,24 @@ def scan_stocks():
             symbols_param = request.args.get('symbols', "RELIANCE.NS,TCS.NS,INFY.NS")
             symbols = symbols_param.split(',')
         
-        # Limit to 5 symbols for performance
+        # Limit to 5 symbols for performance (Railway memory limits)
         symbols = symbols[:5]
         
         results = []
+        failed_symbols = []
         
         for symbol in symbols:
             try:
-                # Fetch stock data
-                stock_data = yf.download(symbol, period="1mo", progress=False)
+                # Fetch stock data with timeout
+                stock_data = yf.download(
+                    symbol, 
+                    period="1mo", 
+                    progress=False,
+                    timeout=10  # Prevent hanging
+                )
                 
                 if stock_data is None or stock_data.empty or len(stock_data) < 10:
+                    failed_symbols.append({"symbol": symbol, "error": "insufficient data"})
                     continue
                 
                 # Get volumes
@@ -112,7 +123,7 @@ def scan_stocks():
                     
                     result = {
                         "symbol": symbol.replace('.NS', ''),
-                        "price": current_price,
+                        "price": round(current_price, 2),
                         "change_percent": round(price_change, 2),
                         "v_pattern": v_pattern,
                         "u_pattern": u_pattern,
@@ -121,18 +132,32 @@ def scan_stocks():
                         "last_updated": datetime.now().isoformat()
                     }
                     results.append(result)
+                else:
+                    # Still include symbol but with pattern status
+                    current_price = float(stock_data['Close'].iloc[-1])
+                    result = {
+                        "symbol": symbol.replace('.NS', ''),
+                        "price": round(current_price, 2),
+                        "v_pattern": v_pattern,
+                        "u_pattern": u_pattern,
+                        "status": "no_pattern_detected"
+                    }
+                    results.append(result)
                     
             except Exception as e:
-                # Skip this stock if error
+                failed_symbols.append({"symbol": symbol, "error": str(e)})
                 continue
         
-        return jsonify({
+        response = {
             "success": True,
             "count": len(results),
             "results": results,
             "scanned": len(symbols),
+            "failed": failed_symbols,
             "timestamp": datetime.now().isoformat()
-        })
+        }
+        
+        return jsonify(response)
         
     except Exception as e:
         return jsonify({
@@ -143,7 +168,7 @@ def scan_stocks():
 
 @app.route('/api/test', methods=['GET'])
 def test_scan():
-    """Test endpoint with sample data"""
+    """Test endpoint with sample data (no API calls)"""
     return jsonify({
         "success": True,
         "count": 2,
@@ -175,10 +200,13 @@ def test_scan():
 
 # ========== START THE SERVER ==========
 if __name__ == '__main__':
+    # Get port from Railway environment or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    
     print("🚀 IncomePlus API Starting...")
-    print("📍 Local URL: http://localhost:5000")
-    print("📍 Health Check: http://localhost:5000/api/health")
-    print("📍 Test Scan: http://localhost:5000/api/test")
-    print("📍 Real Scan: http://localhost:5000/api/scan?symbols=RELIANCE.NS,TCS.NS")
+    print(f"📍 Port: {port}")
+    print("📍 Environment:", os.environ.get('RAILWAY_ENVIRONMENT', 'development'))
     print("=" * 50)
-    app.run(debug=True, port=5000)
+    
+    # Run the app
+    app.run(host='0.0.0.0', port=port)
