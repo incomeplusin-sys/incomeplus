@@ -73,6 +73,48 @@ def normalize_symbol(symbol):
     return [symbol]
 
 # ========== API ENDPOINTS ==========
+
+@app.route('/api/test-patterns', methods=['GET'])
+def test_patterns():
+    """Test endpoint with artificial patterns"""
+    
+    # Artificial V-pattern volumes: High, Medium, LOW, Medium, High
+    v_pattern_volumes = [1000000, 800000, 300000, 600000, 900000]
+    
+    # Artificial U-pattern volumes: High, Medium, LOW, LOW, Medium, High
+    u_pattern_volumes = [1000000, 700000, 400000, 350000, 500000, 800000]
+    
+    # Non-pattern volumes (random)
+    no_pattern_volumes = [500000, 600000, 550000, 580000, 620000]
+    
+    v_detected = detect_v_pattern(v_pattern_volumes)
+    u_detected = detect_u_pattern(u_pattern_volumes)
+    no_pattern_v = detect_v_pattern(no_pattern_volumes)
+    no_pattern_u = detect_u_pattern(no_pattern_volumes)
+    
+    return jsonify({
+        "test_results": {
+            "v_pattern_test": {
+                "volumes": v_pattern_volumes,
+                "detected": v_detected,
+                "should_be": True
+            },
+            "u_pattern_test": {
+                "volumes": u_pattern_volumes,
+                "detected": u_detected,
+                "should_be": True
+            },
+            "no_pattern_test": {
+                "volumes": no_pattern_volumes,
+                "v_detected": no_pattern_v,
+                "u_detected": no_pattern_u,
+                "should_be": False
+            }
+        },
+        "pattern_logic_working": v_detected and u_detected and (not no_pattern_v) and (not no_pattern_u),
+        "timestamp": datetime.now().isoformat()
+    })
+    
 @app.route('/')
 def home():
     return jsonify({
