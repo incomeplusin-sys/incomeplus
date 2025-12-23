@@ -338,7 +338,7 @@ def scan_stocks():
             symbols = [s.strip() for s in symbols_param.split(',')]
         
         # Limit symbols for performance
-        symbols = symbols[:8]
+        symbols = symbols[:209]
         
         results = []
         failed_symbols = []
