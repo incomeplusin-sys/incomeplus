@@ -292,6 +292,407 @@ def health():
         "timestamp": datetime.now().isoformat()
     })
 
+# ========== NEW FLEXIBLE SCANNER INTEGRATION ==========
+from datetime import datetime, timedelta
+
+# Copy the pattern detection functions from ALL_VOLUME_PATTERN_SCANNER.py
+def calculate_ema(volumes, period=20):
+    """Calculate Exponential Moving Average of volumes"""
+    if len(volumes) < period:
+        return None
+    return pd.Series(volumes).ewm(span=period).mean().iloc[-1]
+
+def check_ema_condition(pattern_volumes, ema_value):
+    """Check if ALL volumes are above or below EMA"""
+    if ema_value is None:
+        return "UNKNOWN"
+    
+    volumes_above = sum(1 for vol in pattern_volumes if vol > ema_value)
+    volumes_below = sum(1 for vol in pattern_volumes if vol < ema_value)
+    
+    if volumes_above == len(pattern_volumes):
+        return "WITH_EMA"
+    elif volumes_below == len(pattern_volumes):
+        return "WITHOUT_EMA"
+    else:
+        return "MIXED"
+
+# U Pattern Detection (from scanner)
+def detect_u_pattern_flexible(volumes):
+    patterns = []
+    
+    # Flexible lengths: 6 to 15 candles
+    for length in range(6, 16):
+        for i in range(len(volumes) - length + 1):
+            pattern_volumes = volumes[i:i+length]
+            
+            if len(pattern_volumes) < 6:
+                continue
+            
+            # Find bottom section
+            min_volume = np.min(pattern_volumes)
+            min_indices = [idx for idx, vol in enumerate(pattern_volumes) 
+                          if abs(vol - min_volume) / min_volume < 0.15]
+            
+            if len(min_indices) < 2:
+                continue
+            
+            # Check for extended bottom
+            min_indices_sorted = sorted(min_indices)
+            is_consecutive_bottom = all(min_indices_sorted[j+1] - min_indices_sorted[j] <= 2 
+                                      for j in range(len(min_indices_sorted)-1))
+            
+            if not is_consecutive_bottom:
+                continue
+            
+            bottom_start = min_indices_sorted[0]
+            bottom_end = min_indices_sorted[-1]
+            
+            # Check left side decreasing
+            left_decreasing = True
+            if bottom_start > 0:
+                left_side = pattern_volumes[:bottom_start+1]
+                for j in range(len(left_side)-1):
+                    if left_side[j] < left_side[j+1] * 0.85:
+                        left_decreasing = False
+                        break
+            
+            # Check right side increasing
+            right_increasing = True
+            if bottom_end < len(pattern_volumes) - 1:
+                right_side = pattern_volumes[bottom_end:]
+                for j in range(len(right_side)-1):
+                    if right_side[j] > right_side[j+1] * 1.15:
+                        right_increasing = False
+                        break
+            
+            # Check U-shape significance
+            start_vol = pattern_volumes[0]
+            end_vol = pattern_volumes[-1]
+            bottom_avg = np.mean([pattern_volumes[idx] for idx in min_indices])
+            
+            left_drop_pct = ((start_vol - bottom_avg) / start_vol) * 100
+            right_rise_pct = ((end_vol - bottom_avg) / bottom_avg) * 100
+            
+            # Valid U pattern
+            if (left_decreasing and right_increasing and 
+                left_drop_pct > 15 and right_rise_pct > 20):
+                
+                patterns.append({
+                    'start_idx': i,
+                    'end_idx': i + length - 1,
+                    'pattern_type': 'U_PATTERN',
+                    'pattern_length': length,
+                    'pattern_volumes': pattern_volumes.tolist(),
+                    'bottom_length': len(min_indices),
+                    'bottom_start_idx': bottom_start,
+                    'bottom_end_idx': bottom_end,
+                    'drop_percent': left_drop_pct,
+                    'recovery_percent': right_rise_pct
+                })
+    
+    return patterns
+
+# V Pattern Detection (from scanner)
+def detect_v_pattern_flexible(volumes):
+    patterns = []
+    
+    # Flexible odd lengths: 5,7,9,11,13,15
+    for length in [5, 7, 9, 11, 13, 15]:
+        for i in range(len(volumes) - length + 1):
+            pattern_volumes = volumes[i:i+length]
+            
+            if len(pattern_volumes) < 5:
+                continue
+            
+            # Find the exact bottom
+            bottom_idx = np.argmin(pattern_volumes)
+            
+            # Bottom should not be at edges
+            if bottom_idx == 0 or bottom_idx == length - 1:
+                continue
+            
+            # Check left side - strictly decreasing to bottom
+            left_strictly_decreasing = all(pattern_volumes[j] > pattern_volumes[j+1] 
+                                         for j in range(bottom_idx))
+            
+            # Check right side - strictly increasing from bottom
+            right_strictly_increasing = all(pattern_volumes[bottom_idx+j] < pattern_volumes[bottom_idx+j+1] 
+                                          for j in range(length - bottom_idx - 1))
+            
+            # Check V-shape significance
+            start_vol = pattern_volumes[0]
+            bottom_vol = pattern_volumes[bottom_idx]
+            end_vol = pattern_volumes[-1]
+            
+            drop_ratio = start_vol / bottom_vol if bottom_vol > 0 else 1
+            recovery_ratio = end_vol / bottom_vol if bottom_vol > 0 else 1
+            
+            # Significant V-shape required
+            significant_v = (drop_ratio > 1.25 and recovery_ratio > 1.25)
+            
+            # Valid V pattern
+            if (left_strictly_decreasing and right_strictly_increasing and significant_v):
+                
+                # Calculate V symmetry
+                left_drop = start_vol - bottom_vol
+                right_rise = end_vol - bottom_vol
+                symmetry = min(left_drop, right_rise) / max(left_drop, right_rise) if max(left_drop, right_rise) > 0 else 0
+                
+                patterns.append({
+                    'start_idx': i,
+                    'end_idx': i + length - 1,
+                    'pattern_type': 'V_PATTERN',
+                    'pattern_length': length,
+                    'pattern_volumes': pattern_volumes.tolist(),
+                    'bottom_idx': bottom_idx,
+                    'symmetry_score': symmetry,
+                    'drop_ratio': drop_ratio,
+                    'recovery_ratio': recovery_ratio
+                })
+    
+    return patterns
+
+# Pyramid Pattern Detection (from scanner)
+def detect_pyramid_pattern_flexible(volumes):
+    patterns = []
+    
+    # Flexible odd lengths: 5,7,9,11,13,15
+    for length in [5, 7, 9, 11, 13, 15]:
+        for i in range(len(volumes) - length + 1):
+            pattern_volumes = volumes[i:i+length]
+            
+            if len(pattern_volumes) < 5:
+                continue
+            
+            # Find peak position
+            peak_idx = np.argmax(pattern_volumes)
+            
+            # Peak should not be at edges
+            if peak_idx == 0 or peak_idx == length - 1:
+                continue
+            
+            # Check for flat top
+            peak_volume = pattern_volumes[peak_idx]
+            peak_tolerance = peak_volume * 0.12
+            peak_candles = [idx for idx in range(max(0, peak_idx-1), min(length, peak_idx+2))
+                          if abs(pattern_volumes[idx] - peak_volume) <= peak_tolerance]
+            
+            # Need at least 2 candles at peak level
+            if len(peak_candles) < 2:
+                continue
+            
+            # Check left side increasing to peak
+            left_increasing = all(pattern_volumes[j] <= pattern_volumes[j+1] 
+                                for j in range(peak_idx))
+            
+            # Check right side decreasing from peak
+            right_decreasing = all(pattern_volumes[peak_idx+j] >= pattern_volumes[peak_idx+j+1] 
+                                 for j in range(length - peak_idx - 1))
+            
+            # Check pyramid significance
+            start_vol = pattern_volumes[0]
+            peak_vol = pattern_volumes[peak_idx]
+            end_vol = pattern_volumes[-1]
+            
+            rise_ratio = peak_vol / start_vol if start_vol > 0 else 1
+            fall_ratio = peak_vol / end_vol if end_vol > 0 else 1
+            
+            # Significant pyramid required
+            significant_pyramid = (rise_ratio > 1.25 and fall_ratio > 1.25)
+            
+            # Calculate pyramid symmetry
+            left_side = pattern_volumes[:peak_idx+1]
+            right_side = pattern_volumes[peak_idx:]
+            
+            symmetry_scores = []
+            min_side = min(len(left_side), len(right_side))
+            
+            for j in range(min_side):
+                left_val = left_side[j]
+                right_val = right_side[-(j+1)]
+                if max(left_val, right_val) > 0:
+                    similarity = 1 - abs(left_val - right_val) / max(left_val, right_val)
+                    symmetry_scores.append(similarity)
+            
+            avg_symmetry = np.mean(symmetry_scores) if symmetry_scores else 0
+            
+            # Valid pyramid pattern
+            if (left_increasing and right_decreasing and 
+                significant_pyramid and avg_symmetry > 0.65):
+                
+                patterns.append({
+                    'start_idx': i,
+                    'end_idx': i + length - 1,
+                    'pattern_type': 'PYRAMID',
+                    'pattern_length': length,
+                    'pattern_volumes': pattern_volumes.tolist(),
+                    'peak_idx': peak_idx,
+                    'peak_candles': len(peak_candles),
+                    'symmetry_score': avg_symmetry,
+                    'rise_ratio': rise_ratio,
+                    'fall_ratio': fall_ratio
+                })
+    
+    return patterns
+
+def analyze_price_trend_flexible(df, start_idx, end_idx):
+    """Analyze price trend during pattern"""
+    prices = df['Close'].values[start_idx:end_idx+1]
+    price_change = ((prices[-1] - prices[0]) / prices[0]) * 100
+    
+    if price_change > 5:
+        return "STRONG_UP", price_change
+    elif price_change > 1:
+        return "UP", price_change
+    elif price_change < -5:
+        return "STRONG_DOWN", price_change
+    elif price_change < -1:
+        return "DOWN", price_change
+    else:
+        return "FLAT", price_change
+
+@app.route('/api/scan-advanced', methods=['GET', 'POST'])
+def scan_advanced_patterns():
+    """Advanced scanner endpoint with flexible lengths"""
+    try:
+        # Get symbols from request
+        if request.method == 'POST':
+            data = request.json or {}
+            symbols = data.get('symbols', ['RELIANCE.NS', 'TCS.NS'])
+            months = data.get('months', 3)
+        else:
+            symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS')
+            symbols = [s.strip() for s in symbols_param.split(',')]
+            months = int(request.args.get('months', 3))
+        
+        # Limit for performance
+        symbols = symbols[:10]
+        
+        all_patterns = []
+        
+        for symbol in symbols:
+            try:
+                # Fetch data
+                stock = yf.Ticker(symbol)
+                df = stock.history(period=f"{months}mo", interval='1d')
+                
+                if df.empty or len(df) < 40:
+                    continue
+                
+                required_cols = ['Volume', 'Close', 'High', 'Low']
+                missing_cols = [col for col in required_cols if col not in df.columns]
+                if missing_cols:
+                    continue
+                
+                df = df.dropna(subset=required_cols)
+                df = df[df['Volume'] > 0]
+                
+                if len(df) < 40:
+                    continue
+                
+                # Reset index for date handling
+                df = df.reset_index()
+                if 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+                
+                volumes = df['Volume'].values
+                dates = df['Date'].values if 'Date' in df.columns else [f"Day_{i}" for i in range(len(df))]
+                
+                # Calculate EMA
+                ema_series = pd.Series(volumes).ewm(span=20).mean().values
+                
+                # Detect all pattern types
+                u_patterns = detect_u_pattern_flexible(volumes)
+                v_patterns = detect_v_pattern_flexible(volumes)
+                pyramid_patterns = detect_pyramid_pattern_flexible(volumes)
+                
+                for pattern in u_patterns + v_patterns + pyramid_patterns:
+                    # Get dates
+                    start_date = dates[pattern['start_idx']] if pattern['start_idx'] < len(dates) else "N/A"
+                    end_date = dates[pattern['end_idx']] if pattern['end_idx'] < len(dates) else "N/A"
+                    
+                    # Calculate EMA value
+                    ema_value = ema_series[pattern['start_idx']] if pattern['start_idx'] < len(ema_series) else None
+                    
+                    # Check EMA condition
+                    ema_condition = check_ema_condition(pattern['pattern_volumes'], ema_value)
+                    if ema_condition == "MIXED":
+                        continue
+                    
+                    # Analyze price trend
+                    price_trend, price_change = analyze_price_trend_flexible(df, pattern['start_idx'], pattern['end_idx'])
+                    
+                    # Calculate days ago
+                    try:
+                        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+                        days_ago = (datetime.now() - end_date_obj).days
+                    except:
+                        days_ago = len(dates) - pattern['end_idx'] - 1
+                    
+                    # Skip old patterns
+                    if days_ago > 60:
+                        continue
+                    
+                    # Create pattern info
+                    pattern_info = {
+                        'ticker': symbol.replace('.NS', ''),
+                        'pattern_type': pattern['pattern_type'],
+                        'pattern_length': pattern['pattern_length'],
+                        'ema_condition': ema_condition,
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'price_trend': price_trend,
+                        'price_change': round(price_change, 2),
+                        'days_ago': days_ago,
+                        'current_price': round(float(df['Close'].iloc[-1]), 2),
+                        'ema_value': round(float(ema_value), 0) if ema_value else None,
+                        'extra_info': {}
+                    }
+                    
+                    # Add pattern-specific info
+                    if pattern['pattern_type'] == 'U_PATTERN':
+                        pattern_info['extra_info'] = {
+                            'drop_percent': round(pattern['drop_percent'], 1),
+                            'recovery_percent': round(pattern['recovery_percent'], 1),
+                            'bottom_length': pattern['bottom_length']
+                        }
+                    elif pattern['pattern_type'] == 'V_PATTERN':
+                        pattern_info['extra_info'] = {
+                            'symmetry_score': round(pattern['symmetry_score'], 2),
+                            'drop_ratio': round(pattern['drop_ratio'], 2),
+                            'recovery_ratio': round(pattern['recovery_ratio'], 2)
+                        }
+                    else:  # PYRAMID
+                        pattern_info['extra_info'] = {
+                            'symmetry_score': round(pattern['symmetry_score'], 2),
+                            'rise_ratio': round(pattern['rise_ratio'], 2),
+                            'fall_ratio': round(pattern['fall_ratio'], 2),
+                            'peak_candles': pattern['peak_candles']
+                        }
+                    
+                    all_patterns.append(pattern_info)
+                    
+            except Exception as e:
+                print(f"Error scanning {symbol}: {e}")
+                continue
+        
+        return jsonify({
+            'success': True,
+            'count': len(all_patterns),
+            'patterns': all_patterns,
+            'scanned': len(symbols),
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+
 @app.route('/api/scan-all', methods=['GET'])
 def scan_all_stocks():
     """Scan ALL 200+ Indian stocks with pagination"""
