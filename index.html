@@ -76,6 +76,10 @@
             background: #ffc107;
             color: #212529;
         }
+        .btn-info {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+            color: white;
+        }
         .btn-danger {
             background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
             color: white;
@@ -206,6 +210,30 @@
             border-radius: 8px;
             margin-top: 20px;
         }
+        .pattern-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        .pattern-u-badge {
+            background: #d4edda;
+            color: #155724;
+        }
+        .pattern-v-badge {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .pattern-pyramid-badge {
+            background: #e6e6ff;
+            color: #4d4dff;
+        }
+        .pattern-icon {
+            font-size: 16px;
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
@@ -232,9 +260,29 @@
             
             <div>
                 <button class="btn" onclick="startScan()">🚀 Scan Selected Stocks</button>
+                <button class="btn btn-info" onclick="scanAdvancedPatterns()">🎯 Advanced Pattern Scanner</button>
                 <button class="btn btn-secondary" onclick="testWithSample()">🧪 Test Sample</button>
                 <button class="btn btn-success" onclick="checkAPI()">🔧 Check API</button>
-                <button class="btn btn-danger" onclick="scanAllStocksNow()">⚡ Scan ALL 200+ Stocks NOW</button>
+                <button class="btn btn-danger" onclick="scanAllStocksNow()">⚡ Scan ALL 200+ Stocks</button>
+            </div>
+            
+            <!-- Add pattern info -->
+            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #17a2b8;">
+                <strong style="color: #17a2b8;">🎯 Advanced Patterns:</strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+                    <div class="pattern-badge pattern-u-badge">
+                        <span class="pattern-icon">🟡</span> U Pattern (6-15 candles)
+                    </div>
+                    <div class="pattern-badge pattern-v-badge">
+                        <span class="pattern-icon">🔻</span> V Pattern (5-15 candles)
+                    </div>
+                    <div class="pattern-badge pattern-pyramid-badge">
+                        <span class="pattern-icon">⛰️</span> Pyramid Pattern (5-15 candles)
+                    </div>
+                </div>
+                <p style="margin-top: 10px; color: #666; font-size: 14px;">
+                    <strong>EMA Rules:</strong> All candles must be either WITH EMA or WITHOUT EMA only
+                </p>
             </div>
             
             <div id="loading" class="loading">
@@ -249,8 +297,9 @@
             <div id="statusMessage" class="status"></div>
         </div>
         
+        <!-- Basic Results Card -->
         <div id="resultsCard" class="card results-container">
-            <h2>📊 Scan Results</h2>
+            <h2>📊 Basic Scan Results</h2>
             <p><strong>Patterns Found:</strong> <span id="resultCount">0</span> stocks</p>
             <p><strong>Total Scanned:</strong> <span id="totalScanned">0</span> stocks</p>
             <p><strong>Scan Time:</strong> <span id="scanTime">-</span></p>
@@ -284,6 +333,42 @@
             </div>
         </div>
         
+        <!-- Advanced Results Card (NEW) -->
+        <div id="advancedResultsCard" class="card results-container" style="display: none;">
+            <h2>🎯 Advanced Pattern Results</h2>
+            <p><strong>Flexible Patterns Found:</strong> <span id="advancedResultCount">0</span></p>
+            <p><strong>Pattern Types:</strong> <span id="patternTypes">-</span></p>
+            <p><strong>Scan Time:</strong> <span id="advancedScanTime">-</span></p>
+            
+            <div class="results-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Stock</th>
+                            <th>Pattern</th>
+                            <th>Length</th>
+                            <th>EMA</th>
+                            <th>Period</th>
+                            <th>Price Trend</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="advancedResultsBody">
+                        <!-- Advanced results will appear here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="advancedNoResults" style="display: none; text-align: center; padding: 40px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">📭</div>
+                <h3>No Advanced Patterns Found</h3>
+                <p>No U, V, or Pyramid patterns detected.</p>
+                <p style="color: #6c757d; margin-top: 10px;">
+                    Advanced patterns require specific volume formations over 5-15 candles.
+                </p>
+            </div>
+        </div>
+        
         <footer>
             <p>© 2024 IncomePlus.in - Stock Volume Pattern Scanner</p>
             <p style="margin-top: 10px; font-size: 14px;">
@@ -304,154 +389,234 @@
         };
         
         // ========== ONE-CLICK SCAN ALL FUNCTION ==========
-       // Scan ALL stocks with one click (USING EXISTING ENDPOINTS)
-async function scanAllStocksNow() {
-    // Show loading
-    document.getElementById('loading').style.display = 'block';
-    document.getElementById('progressBarContainer').style.display = 'block';
-    document.getElementById('loadingText').textContent = '🚀 Scanning ALL 200+ stocks in batches...';
-    document.getElementById('progressFill').style.width = '0%';
-    showStatus('Starting mass scan of all Indian stocks... This may take 2-3 minutes.', 'success');
-    
-    // Clear previous results
-    document.getElementById('resultsBody').innerHTML = '';
-    document.getElementById('resultsCard').style.display = 'none';
-    
-    let allResults = [];
-    let page = 0;
-    const pageSize = 20;
-    
-    try {
-        while (true) {
-            // Update progress
-            const progress = Math.min((page * pageSize) / 200 * 100, 100);
-            document.getElementById('progressFill').style.width = `${progress}%`;
-            document.getElementById('loadingText').textContent = 
-                `Scanning batch ${page + 1}... (${Math.min((page + 1) * pageSize, 200)}/200 stocks)`;
+        async function scanAllStocksNow() {
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('progressBarContainer').style.display = 'block';
+            document.getElementById('loadingText').textContent = '🚀 Scanning ALL 200+ stocks in batches...';
+            document.getElementById('progressFill').style.width = '0%';
+            showStatus('Starting mass scan of all Indian stocks... This may take 2-3 minutes.', 'success');
             
-            // Use the EXISTING /api/scan-all endpoint
-            const response = await fetch(`${API_BASE}/api/scan-all?page=${page}&page_size=${pageSize}`);
+            // Clear previous results
+            document.getElementById('resultsBody').innerHTML = '';
+            document.getElementById('resultsCard').style.display = 'none';
+            document.getElementById('advancedResultsCard').style.display = 'none';
             
-            // Check if response is valid
-            const responseText = await response.text();
+            let allResults = [];
+            let page = 0;
+            const pageSize = 20;
             
             try {
-                const data = JSON.parse(responseText);
-                
-                if (!data.success || !data.results) {
-                    break;
+                while (true) {
+                    // Update progress
+                    const progress = Math.min((page * pageSize) / 200 * 100, 100);
+                    document.getElementById('progressFill').style.width = `${progress}%`;
+                    document.getElementById('loadingText').textContent = 
+                        `Scanning batch ${page + 1}... (${Math.min((page + 1) * pageSize, 200)}/200 stocks)`;
+                    
+                    // Use the EXISTING /api/scan-all endpoint
+                    const response = await fetch(`${API_BASE}/api/scan-all?page=${page}&page_size=${pageSize}`);
+                    
+                    // Check if response is valid
+                    const responseText = await response.text();
+                    
+                    try {
+                        const data = JSON.parse(responseText);
+                        
+                        if (!data.success || !data.results) {
+                            break;
+                        }
+                        
+                        allResults = allResults.concat(data.results);
+                        
+                        // Update UI with current results
+                        updateResultsTable(allResults);
+                        
+                        if (!data.has_next_page) {
+                            break;
+                        }
+                        
+                        page++;
+                        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                        
+                    } catch (parseError) {
+                        console.error('JSON Parse Error:', parseError, 'Response:', responseText.substring(0, 200));
+                        showStatus('Error parsing response. Please try again.', 'error');
+                        break;
+                    }
                 }
                 
-                allResults = allResults.concat(data.results);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('progressBarContainer').style.display = 'none';
+                document.getElementById('progressFill').style.width = '100%';
                 
-                // Update UI with current results
-                updateResultsTable(allResults);
+                const patternsFound = allResults.filter(r => r.v_pattern || r.u_pattern).length;
+                showStatus(
+                    `✅ Mass scan complete! ${patternsFound} patterns found in ${allResults.length} stocks`,
+                    'success'
+                );
                 
-                if (!data.has_next_page) {
-                    break;
-                }
-                
-                page++;
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-                
-            } catch (parseError) {
-                console.error('JSON Parse Error:', parseError, 'Response:', responseText.substring(0, 200));
-                showStatus('Error parsing response. Please try again.', 'error');
-                break;
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('progressBarContainer').style.display = 'none';
+                showStatus('Error during mass scan: ' + error.message, 'error');
             }
         }
         
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('progressBarContainer').style.display = 'none';
-        document.getElementById('progressFill').style.width = '100%';
-        
-        const patternsFound = allResults.filter(r => r.v_pattern || r.u_pattern).length;
-        showStatus(
-            `✅ Mass scan complete! ${patternsFound} patterns found in ${allResults.length} stocks`,
-            'success'
-        );
-        
-    } catch (error) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('progressBarContainer').style.display = 'none';
-        showStatus('Error during mass scan: ' + error.message, 'error');
-    }
-} 
-        // Display all results in a compact table
-        function displayAllResults(data) {
-            document.getElementById('resultCount').textContent = data.patterns_found;
-            document.getElementById('totalScanned').textContent = data.successful;
-            document.getElementById('scanTime').textContent = new Date().toLocaleTimeString();
+        // ========== ADVANCED PATTERN SCANNER ==========
+        async function scanAdvancedPatterns() {
+            const stocksInput = document.getElementById('stocksInput').value;
+            const symbols = stocksInput.split(',').map(s => s.trim()).filter(s => s);
             
-            const resultsBody = document.getElementById('resultsBody');
-            resultsBody.innerHTML = '';
-            
-            if (data.results && data.results.length > 0) {
-                document.getElementById('noResults').style.display = 'none';
-                document.getElementById('resultsTable').style.display = 'block';
-                
-                // Sort: patterns first, then by symbol
-                const sortedResults = [...data.results].sort((a, b) => {
-                    const aHasPattern = a.v_pattern || a.u_pattern;
-                    const bHasPattern = b.v_pattern || b.u_pattern;
-                    if (aHasPattern && !bHasPattern) return -1;
-                    if (!aHasPattern && bHasPattern) return 1;
-                    return a.symbol.localeCompare(b.symbol);
-                });
-                
-                // Show only patterns first (or all if no patterns)
-                const patterns = sortedResults.filter(r => r.v_pattern || r.u_pattern);
-                const nonPatterns = sortedResults.filter(r => !r.v_pattern && !r.u_pattern);
-                
-                const resultsToShow = patterns.length > 0 ? patterns : sortedResults.slice(0, 50);
-                
-                resultsToShow.forEach(stock => {
-                    const row = document.createElement('tr');
-                    const hasPattern = stock.v_pattern || stock.u_pattern;
-                    
-                    row.innerHTML = `
-                        <td><strong>${stock.symbol}</strong></td>
-                        <td>₹${stock.price ? stock.price.toFixed(2) : '0.00'}</td>
-                        <td style="color: ${stock.change_percent >= 0 ? '#28a745' : '#dc3545'};">
-                            ${stock.change_percent >= 0 ? '+' : ''}${stock.change_percent ? stock.change_percent.toFixed(2) : '0.00'}%
-                        </td>
-                        <td class="${stock.v_pattern ? 'pattern-yes' : 'pattern-no'}" style="text-align: center;">
-                            ${stock.v_pattern ? '✅' : '❌'}
-                        </td>
-                        <td class="${stock.u_pattern ? 'pattern-yes' : 'pattern-no'}" style="text-align: center;">
-                            ${stock.u_pattern ? '✅' : '❌'}
-                        </td>
-                        <td>${stock.volume ? Math.round(stock.volume / 1000000) + 'M' : 'N/A'}</td>
-                        <td style="color: ${hasPattern ? '#28a745' : '#6c757d'}; font-weight: ${hasPattern ? 'bold' : 'normal'}; text-align: center;">
-                            ${hasPattern ? '🎯' : '⏸️'}
-                        </td>
-                    `;
-                    
-                    resultsBody.appendChild(row);
-                });
-                
-                // Add summary row
-                if (patterns.length > 0 || nonPatterns.length > 0) {
-                    const summaryRow = document.createElement('tr');
-                    summaryRow.style.backgroundColor = '#f8f9fa';
-                    summaryRow.innerHTML = `
-                        <td colspan="7" style="text-align: center; padding: 15px;">
-                            <strong>📊 SCAN SUMMARY:</strong> 
-                            ${data.patterns_found} patterns found | 
-                            ${data.successful} successful scans | 
-                            ${data.failed} failed
-                            ${nonPatterns.length > 0 ? ` | Showing ${patterns.length} patterns (${nonPatterns.length} non-patterns hidden)` : ''}
-                        </td>
-                    `;
-                    resultsBody.appendChild(summaryRow);
-                }
-                
-            } else {
-                document.getElementById('resultsTable').style.display = 'none';
-                document.getElementById('noResults').style.display = 'block';
+            if (symbols.length === 0) {
+                showStatus('Please enter at least one stock symbol.', 'error');
+                return;
             }
             
-            document.getElementById('resultsCard').style.display = 'block';
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('advancedResultsCard').style.display = 'none';
+            document.getElementById('resultsCard').style.display = 'none';
+            document.getElementById('loadingText').textContent = '🔍 Scanning for Advanced Patterns...';
+            showStatus('Starting advanced pattern scan with flexible lengths...', 'success');
+            
+            try {
+                const encodedSymbols = encodeURIComponent(symbols.join(','));
+                const response = await fetch(`${API_BASE}/api/scan-advanced?symbols=${encodedSymbols}&months=3`);
+                
+                const data = await response.json();
+                document.getElementById('loading').style.display = 'none';
+                
+                if (data.success) {
+                    lastScanTime = new Date().toLocaleTimeString();
+                    document.getElementById('lastUpdate').textContent = 'Last updated: ' + lastScanTime;
+                    document.getElementById('advancedScanTime').textContent = lastScanTime;
+                    
+                    // Display advanced results
+                    displayAdvancedResults(data);
+                } else {
+                    showStatus('Advanced scan failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+                
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showStatus('Error connecting to advanced scanner: ' + error.message, 'error');
+            }
+        }
+        
+        function displayAdvancedResults(data) {
+            const container = document.getElementById('advancedResultsCard');
+            const body = document.getElementById('advancedResultsBody');
+            const noResultsEl = document.getElementById('advancedNoResults');
+            const countEl = document.getElementById('advancedResultCount');
+            const typesEl = document.getElementById('patternTypes');
+            
+            // Hide all results initially
+            body.style.display = 'block';
+            noResultsEl.style.display = 'none';
+            
+            if (!data.patterns || data.patterns.length === 0) {
+                body.style.display = 'none';
+                noResultsEl.style.display = 'block';
+                countEl.textContent = '0';
+                typesEl.textContent = '-';
+                container.style.display = 'block';
+                showStatus('No advanced patterns found.', 'error');
+                return;
+            }
+            
+            // Count pattern types
+            const patternTypes = [...new Set(data.patterns.map(p => p.pattern_type))];
+            typesEl.textContent = patternTypes.join(', ');
+            countEl.textContent = data.patterns.length;
+            
+            // Clear previous results
+            body.innerHTML = '';
+            
+            // Sort by pattern type and recency
+            data.patterns.sort((a, b) => {
+                if (a.pattern_type !== b.pattern_type) {
+                    return a.pattern_type.localeCompare(b.pattern_type);
+                }
+                return a.days_ago - b.days_ago;
+            });
+            
+            // Add each pattern
+            data.patterns.forEach(pattern => {
+                const row = document.createElement('tr');
+                
+                // Pattern icon and color
+                let patternIcon = '📊';
+                let patternColor = '#6c757d';
+                let patternName = pattern.pattern_type.replace('_', ' ');
+                
+                if (pattern.pattern_type === 'U_PATTERN') {
+                    patternIcon = '🟡';
+                    patternColor = '#28a745';
+                } else if (pattern.pattern_type === 'V_PATTERN') {
+                    patternIcon = '🔻';
+                    patternColor = '#ffc107';
+                } else if (pattern.pattern_type === 'PYRAMID') {
+                    patternIcon = '⛰️';
+                    patternColor = '#9c27b0';
+                }
+                
+                // EMA icon
+                const emaIcon = pattern.ema_condition === 'WITH_EMA' ? '📈' : '📉';
+                const emaColor = pattern.ema_condition === 'WITH_EMA' ? '#28a745' : '#dc3545';
+                
+                // Price trend icon
+                let priceIcon = '➡️';
+                let trendColor = '#6c757d';
+                let trendName = pattern.price_trend.replace('_', ' ');
+                
+                if (pattern.price_trend.includes('UP')) {
+                    priceIcon = '🔼';
+                    trendColor = '#28a745';
+                } else if (pattern.price_trend.includes('DOWN')) {
+                    priceIcon = '🔽';
+                    trendColor = '#dc3545';
+                }
+                
+                // Extra info text
+                let extraInfo = '';
+                if (pattern.pattern_type === 'U_PATTERN') {
+                    extraInfo = `Drop: ${pattern.extra_info.drop_percent}% | Rise: ${pattern.extra_info.recovery_percent}% | Bottom: ${pattern.extra_info.bottom_length}c`;
+                } else if (pattern.pattern_type === 'V_PATTERN') {
+                    extraInfo = `Symmetry: ${pattern.extra_info.symmetry_score} | Drop: ${pattern.extra_info.drop_ratio}x | Rise: ${pattern.extra_info.recovery_ratio}x`;
+                } else {
+                    extraInfo = `Symmetry: ${pattern.extra_info.symmetry_score} | Rise: ${pattern.extra_info.rise_ratio}x | Fall: ${pattern.extra_info.fall_ratio}x`;
+                }
+                
+                row.innerHTML = `
+                    <td><strong>${pattern.ticker}</strong></td>
+                    <td style="color: ${patternColor}; font-weight: bold;">
+                        ${patternIcon} ${patternName}
+                    </td>
+                    <td>${pattern.pattern_length} candles</td>
+                    <td style="color: ${emaColor}; font-weight: bold;">
+                        ${emaIcon} ${pattern.ema_condition}
+                    </td>
+                    <td>
+                        ${pattern.start_date} to ${pattern.end_date}<br>
+                        <small style="color: #666;">(${pattern.days_ago} days ago)</small>
+                    </td>
+                    <td style="color: ${trendColor}; font-weight: bold;">
+                        ${priceIcon} ${trendName}<br>
+                        <small>${pattern.price_change > 0 ? '+' : ''}${pattern.price_change}%</small>
+                    </td>
+                    <td>
+                        <small style="color: #666;">${extraInfo}</small><br>
+                        <small>Price: ₹${pattern.current_price}</small>
+                    </td>
+                `;
+                
+                body.appendChild(row);
+            });
+            
+            // Show the container
+            container.style.display = 'block';
+            showStatus(`✅ Found ${data.patterns.length} advanced patterns!`, 'success');
         }
         
         // ========== EXISTING FUNCTIONS ==========
@@ -491,6 +656,7 @@ async function scanAllStocksNow() {
             // Show loading
             document.getElementById('loading').style.display = 'block';
             document.getElementById('resultsCard').style.display = 'none';
+            document.getElementById('advancedResultsCard').style.display = 'none';
             showStatus(`Starting scan of ${symbols.length} stocks...`, 'success');
             
             try {
@@ -648,6 +814,12 @@ async function scanAllStocksNow() {
             }, 5000);
         }
         
+        function updateResultsTable(allResults) {
+            // This function can be used for updating UI during batch scanning
+            const resultsBody = document.getElementById('resultsBody');
+            // Add logic to update table with allResults if needed
+        }
+        
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.key === 'Enter') {
                 startScan();
@@ -656,4 +828,3 @@ async function scanAllStocksNow() {
     </script>
 </body>
 </html>
-
