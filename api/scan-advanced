@@ -1,0 +1,86 @@
+# ========== HISTORICAL SCANNER ENDPOINT (ADD THIS) ==========
+@app.route('/api/scanner/historical', methods=['GET'])
+def historical_scanner():
+    """Scan 6 months historical data with strict patterns"""
+    try:
+        symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS,INFY.NS')
+        symbols = [s.strip() for s in symbols_param.split(',')]
+        months = int(request.args.get('months', 6))
+        highlight_current_week = request.args.get('current_week', 'true').lower() == 'true'
+        
+        all_patterns = []
+        
+        for symbol in symbols[:10]:  # Limit to 10 for performance
+            patterns = scan_historical_patterns(symbol, months)
+            
+            if highlight_current_week:
+                # Highlight patterns from current week
+                for pattern in patterns:
+                    if pattern['is_current_week']:
+                        pattern['highlight'] = 'CURRENT_WEEK'
+                        pattern['priority'] = 1
+                    elif pattern['is_current_month']:
+                        pattern['priority'] = 2
+                    else:
+                        pattern['priority'] = 3
+            else:
+                for pattern in patterns:
+                    pattern['priority'] = 3
+            
+            all_patterns.extend(patterns)
+        
+        # Sort: current week first, then by pattern quality
+        all_patterns.sort(key=lambda x: (x.get('priority', 3), -x.get('strictness_score', 0)))
+        
+        # Categorize patterns
+        current_week_patterns = [p for p in all_patterns if p.get('highlight') == 'CURRENT_WEEK']
+        current_month_patterns = [p for p in all_patterns if p.get('is_current_month', False) and not p.get('is_current_week', False)]
+        historical_patterns = [p for p in all_patterns if not p.get('is_current_month', False)]
+        
+        # Calculate pattern statistics
+        v_patterns = [p for p in all_patterns if p['pattern_type'] == 'V_PATTERN']
+        u_patterns = [p for p in all_patterns if p['pattern_type'] == 'U_PATTERN']
+        
+        # Analyze what happens after patterns
+        pattern_outcomes = []
+        for pattern in all_patterns:
+            if 'future_price_change' in pattern['price_details']:
+                outcome = {
+                    'pattern_type': pattern['pattern_type'],
+                    'days_after': pattern['price_details'].get('days_analyzed_after', 5),
+                    'price_change': pattern['price_details']['future_price_change'],
+                    'volume_drop': pattern['volume_details']['drop_percent'],
+                    'volume_recovery': pattern['volume_details']['recovery_percent']
+                }
+                pattern_outcomes.append(outcome)
+        
+        return jsonify({
+            'success': True,
+            'total_patterns_found': len(all_patterns),
+            'pattern_distribution': {
+                'v_patterns': len(v_patterns),
+                'u_patterns': len(u_patterns),
+                'current_week': len(current_week_patterns),
+                'current_month': len(current_month_patterns),
+                'historical': len(historical_patterns)
+            },
+            'current_week_patterns': current_week_patterns[:10],
+            'current_month_patterns': current_month_patterns[:10],
+            'all_patterns': all_patterns[:50],
+            'pattern_outcomes_analysis': {
+                'total_patterns_analyzed': len(pattern_outcomes),
+                'avg_price_change_after_5_days': round(np.mean([p['price_change'] for p in pattern_outcomes]), 2) if pattern_outcomes else 0,
+                'successful_patterns': len([p for p in pattern_outcomes if p['price_change'] > 0]),
+                'failed_patterns': len([p for p in pattern_outcomes if p['price_change'] <= 0]),
+                'success_rate': f"{(len([p for p in pattern_outcomes if p['price_change'] > 0])/len(pattern_outcomes)*100):.1f}%" if pattern_outcomes else "0%"
+            },
+            'strictness_note': 'Patterns detected with STRICT rules: Min 30% volume changes required',
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
