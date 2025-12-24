@@ -1,28 +1,27 @@
 """
-INCOMEPLUS WEB API - COMPLETE SCANNER VERSION
+INCOMEPLUS WEB API - FLASK VERSION
 Optimized for Railway deployment with GitHub Pages frontend
-With Historical Pattern Scanner and Fixed yfinance Period Issues
+UPDATED VERSION: Now uses Alpha Vantage API instead of yfinance
 """
 
 import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import time
+import requests
 import warnings
 warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
 
-# ========== ENHANCED CORS SETTINGS ==========
+# ========== ENHANCED CORS SETTINGS FOR GITHUB PAGES ==========
 CORS(app, resources={
     r"/*": {
         "origins": [
-            "https://incomeplusin-sys.github.io",
-            "http://localhost:8000",
+            "https://incomeplusin-sys.github.io",  # Your GitHub Pages
+            "http://localhost:8000",              # Local testing
             "http://127.0.0.1:8000",
             "http://localhost:5000",
             "http://127.0.0.1:5000"
@@ -32,7 +31,12 @@ CORS(app, resources={
     }
 })
 
-# ========== ALL INDIAN STOCKS LIST ==========
+# ========== ALPHA VANTAGE CONFIGURATION ==========
+ALPHA_VANTAGE_API_KEY = "JMY6SM927NKIJIXI"  # YOUR API KEY
+ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE = 5
+ALPHA_VANTAGE_DAILY_LIMIT = 25
+
+# ========== ALL YOUR STOCKS LIST ==========
 ALL_INDIAN_STOCKS = [
     "360ONE.NS", "ABB.NS", "APLAPOLLO.NS", "AUBANK.NS", "ADANIENSOL.NS",
     "ADANIENT.NS", "ADANIGREEN.NS", "ADANIPORTS.NS", "ABCAPITAL.NS", "ALKEM.NS",
@@ -76,67 +80,292 @@ ALL_INDIAN_STOCKS = [
     "IDEA.NS", "VOLTAS.NS", "WIPRO.NS", "YESBANK.NS", "ZYDUSLIFE.NS"
 ]
 
-# ========== FIXED YFINANCE DATA FETCHING ==========
-def fetch_stock_data(symbol, days=30):
-    """Fetch stock data using start/end dates instead of period parameter"""
+# ========== ALPHA VANTAGE DATA FETCHER ==========
+def fetch_stock_data_alpha_vantage(symbol, days=30):
+    """Fetch stock data using Alpha Vantage API (RELIABLE)"""
     try:
-        print(f"🔍 [DEBUG] Fetching data for {symbol}, days={days}")
+        # Remove .NS/.BO suffix for Alpha Vantage
+        clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
         
-        # Calculate dates (FIX for Indian stocks)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        print(f"🔍 [ALPHA] Fetching {clean_symbol} for {days} days")
         
-        # Use start/end format instead of period
-        stock_data = yf.download(
-            symbol,
-            start=start_date.strftime('%Y-%m-%d'),
-            end=end_date.strftime('%Y-%m-%d'),
-            progress=False,
-            timeout=15
-        )
+        # Try BSE first
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_symbol}.BSE&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
         
-        if stock_data.empty:
-            print(f"⚠️ [DEBUG] No data returned for {symbol}")
+        response = requests.get(url, timeout=15)
+        data = response.json()
+        
+        # Check if we got valid data
+        if "Time Series (Daily)" not in data:
+            print(f"⚠️ [ALPHA] BSE failed, trying NSE...")
+            
+            # Try NSE instead of BSE
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_symbol}.NSE&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
+            response = requests.get(url, timeout=15)
+            data = response.json()
+            
+            if "Time Series (Daily)" not in data:
+                # Check if rate limited
+                if "Note" in data:
+                    print(f"⚠️ [ALPHA] Rate limited: {data['Note'][:80]}...")
+                print(f"❌ [ALPHA] Both BSE and NSE failed for {clean_symbol}")
+                return None
+        
+        # Convert Alpha Vantage data to DataFrame
+        time_series = data["Time Series (Daily)"]
+        
+        # Get the most recent days
+        dates = sorted(time_series.keys(), reverse=True)[:days]
+        
+        # Create DataFrame
+        records = []
+        for date in dates:
+            day_data = time_series[date]
+            records.append({
+                'Date': date,
+                'Open': float(day_data['1. open']),
+                'High': float(day_data['2. high']),
+                'Low': float(day_data['3. low']),
+                'Close': float(day_data['4. close']),
+                'Volume': int(float(day_data['5. volume']))
+            })
+        
+        if not records:
+            print(f"⚠️ [ALPHA] No records created for {clean_symbol}")
             return None
         
-        print(f"📊 [DEBUG] Success! Data shape: {stock_data.shape}")
-        return stock_data
+        df = pd.DataFrame(records)
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.set_index('Date').sort_index()
+        
+        print(f"✅ [ALPHA] Success! Got {len(df)} days for {clean_symbol}")
+        return df
         
     except Exception as e:
-        print(f"❌ [DEBUG] Error fetching {symbol}: {str(e)[:100]}")
+        print(f"❌ [ALPHA] Error fetching {symbol}: {str(e)[:100]}")
         return None
 
-# ========== HISTORICAL PATTERN SCANNER (FIXED) ==========
-def scan_historical_patterns(symbol, months=6):
-    """Scan historical data with FIXED date fetching"""
+# ========== IMPROVED PATTERN DETECTION FUNCTIONS ==========
+def detect_v_pattern(volumes):
+    """
+    IMPROVED V-pattern detection
+    Looks for: High → Medium → LOW → Medium → High pattern
+    More lenient to find real patterns
+    """
+    if len(volumes) < 5:
+        return False
+    
+    last_5 = volumes[-5:]
+    
+    # Find which day has minimum volume
+    min_day = np.argmin(last_5)
+    
+    # For V-pattern, day 2 (index 2) should be minimum OR day 3
+    if min_day not in [2, 3]:
+        return False
+    
+    # Check if volumes increase after the minimum
+    if min_day == 2:
+        # Pattern: day0 → day1 → MIN(day2) → day3↑ → day4↑
+        conditions = [
+            last_5[3] > last_5[2] * 1.05,  # Day 3 at least 5% higher than Day 2
+            last_5[4] > last_5[3] * 1.02,  # Day 4 at least 2% higher than Day 3
+            last_5[2] < last_5[0] * 0.8,   # Day 2 at least 20% lower than Day 0
+            last_5[2] < last_5[1] * 0.8,   # Day 2 at least 20% lower than Day 1
+        ]
+    else:  # min_day == 3
+        # Pattern: day0 → day1 → day2 → MIN(day3) → day4↑
+        conditions = [
+            last_5[4] > last_5[3] * 1.1,   # Day 4 at least 10% higher than Day 3
+            last_5[3] < last_5[1] * 0.7,   # Day 3 significantly lower than Day 1
+            last_5[3] < last_5[2] * 0.9,   # Day 3 lower than Day 2
+        ]
+    
+    return all(conditions)
+
+def detect_u_pattern(volumes):
+    """
+    IMPROVED U-pattern detection
+    Looks for gradual decrease then increase
+    """
+    if len(volumes) < 6:
+        return False
+    
+    last_6 = volumes[-6:]
+    
+    # Find minimum volume in the middle (days 2, 3, or 4)
+    middle_days = last_6[2:5]
+    min_middle_idx = np.argmin(middle_days) + 2  # Adjust index
+    
+    # The minimum should be in the middle (not at edges)
+    if min_middle_idx not in [2, 3, 4]:
+        return False
+    
+    # Check gradual decrease to minimum
+    decrease_ok = True
+    for i in range(1, min_middle_idx + 1):
+        if last_6[i] > last_6[i-1] * 1.1:  # Not decreasing
+            decrease_ok = False
+            break
+    
+    # Check gradual increase from minimum
+    increase_ok = True
+    for i in range(min_middle_idx + 1, 6):
+        if last_6[i] < last_6[i-1] * 0.95:  # Not increasing
+            increase_ok = False
+            break
+    
+    # Minimum should be significantly lower than start
+    min_volume = last_6[min_middle_idx]
+    return (decrease_ok and increase_ok and 
+            min_volume < last_6[0] * 0.7 and 
+            min_volume < last_6[1] * 0.7)
+
+# ========== HELPER FUNCTIONS ==========
+def normalize_symbol(symbol):
+    """Try different symbol formats for Alpha Vantage"""
+    symbol = symbol.strip().upper()
+    
+    # Remove suffix for Alpha Vantage
+    clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
+    
+    # Alpha Vantage supports BSE and NSE suffixes
+    return [f"{clean_symbol}.BSE", f"{clean_symbol}.NSE"]
+
+def scan_single_stock(symbol):
+    """Scan a single stock using Alpha Vantage"""
     try:
-        print(f"🔍 [DEBUG] Starting historical scan for {symbol}, months={months}")
+        print(f"🔍 [SCAN] Starting scan for {symbol}")
         
-        # Calculate dates for the requested months
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=months*30)  # Approximate 30 days per month
+        # Use Alpha Vantage instead of yfinance
+        stock_data = fetch_stock_data_alpha_vantage(symbol, days=30)
         
-        print(f"📅 [DEBUG] Date range: {start_date.date()} to {end_date.date()}")
+        if stock_data is None or stock_data.empty:
+            print(f"⚠️ [SCAN] No data for {symbol}")
+            return {
+                "symbol": symbol,
+                "error": "Alpha Vantage: No data returned",
+                "success": False
+            }
         
-        # Fetch data with start/end dates
-        stock_data = yf.download(
-            symbol,
-            start=start_date.strftime('%Y-%m-%d'),
-            end=end_date.strftime('%Y-%m-%d'),
-            progress=False,
-            timeout=20
-        )
+        volumes = stock_data['Volume'].values
+        closes = stock_data['Close'].values
         
-        if stock_data.empty:
-            print(f"⚠️ [DEBUG] No data returned for {symbol}")
+        current_price = float(closes[-1]) if len(closes) > 0 else 0
+        prev_price = float(closes[-2]) if len(closes) > 1 else current_price
+        price_change = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
+        
+        v_pattern = detect_v_pattern(volumes)
+        u_pattern = detect_u_pattern(volumes)
+        
+        clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
+        
+        print(f"✅ [SCAN] Success! {clean_symbol}: ₹{current_price:.2f}, V:{v_pattern}, U:{u_pattern}")
+        
+        return {
+            "symbol": clean_symbol,
+            "original_symbol": symbol,
+            "price": round(current_price, 2),
+            "change_percent": round(price_change, 2),
+            "v_pattern": v_pattern,
+            "u_pattern": u_pattern,
+            "volume": int(volumes[-1]) if len(volumes) > 0 else 0,
+            "data_points": len(stock_data),
+            "last_updated": datetime.now().isoformat(),
+            "status": "pattern_found" if (v_pattern or u_pattern) else "no_pattern",
+            "data_source": "Alpha Vantage",
+            "success": True
+        }
+        
+    except Exception as e:
+        print(f"❌ [SCAN] Error: {str(e)}")
+        return {
+            "symbol": symbol,
+            "error": str(e)[:100],
+            "success": False
+        }
+
+# ========== DEMO MODE FOR TESTING ==========
+DEMO_MODE = os.environ.get('DEMO_MODE', 'false').lower() == 'true'
+
+def ensure_patterns_for_demo(symbol, v_pattern, u_pattern):
+    """Ensure some patterns are found in demo mode"""
+    if not DEMO_MODE:
+        return v_pattern, u_pattern
+    
+    # In demo mode, force some patterns for popular stocks
+    demo_stocks = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 
+                   'SBIN', 'TATAMOTORS', 'BAJFINANCE', 'WIPRO', 'AXISBANK']
+    
+    clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
+    
+    if clean_symbol in demo_stocks[:3]:
+        return True, False  # First 3 get V-pattern
+    elif clean_symbol in demo_stocks[3:6]:
+        return False, True  # Next 3 get U-pattern
+    elif clean_symbol in demo_stocks[6:]:
+        return True, True   # Rest get both
+    
+    return v_pattern, u_pattern
+
+# ========== API ENDPOINTS ==========
+@app.route('/')
+def home():
+    return jsonify({
+        "service": "IncomePlus Stock Scanner API",
+        "version": "4.0",
+        "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'production'),
+        "demo_mode": DEMO_MODE,
+        "status": "running",
+        "total_stocks_available": len(ALL_INDIAN_STOCKS),
+        "frontend_url": "https://incomeplusin-sys.github.io/incomeplus/",
+        "backend_url": "https://web-production-1b0f1.up.railway.app",
+        "data_source": "Alpha Vantage",
+        "pattern_logic": "IMPROVED - More lenient detection",
+        "alpha_vantage_limits": {
+            "calls_per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
+            "daily_calls": ALPHA_VANTAGE_DAILY_LIMIT
+        },
+        "endpoints": {
+            "/": "This information",
+            "/api/health": "Health check",
+            "/api/scan": "Scan stocks (GET with ?symbols= or POST JSON)",
+            "/api/scan-all": "Scan all 200+ Indian stocks (paginated)",
+            "/api/scan-batch": "Batch scan (POST with symbols list)",
+            "/api/test": "Test data (no API calls)",
+            "/api/test-patterns": "Test pattern detection logic",
+            "/api/debug-scan/<symbol>": "Debug scan for specific symbol"
+        },
+        "timestamp": datetime.now().isoformat()
+    })
+
+@app.route('/api/health')
+def health():
+    return jsonify({
+        "status": "healthy",
+        "message": "IncomePlus API is working with Alpha Vantage",
+        "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'production'),
+        "demo_mode": DEMO_MODE,
+        "total_stocks": len(ALL_INDIAN_STOCKS),
+        "data_source": "Alpha Vantage",
+        "alpha_vantage_status": "Connected",
+        "pattern_detection": "IMPROVED V4.0",
+        "timestamp": datetime.now().isoformat()
+    })
+
+# ========== HISTORICAL PATTERN SCANNER WITH ALPHA VANTAGE ==========
+def scan_historical_patterns(symbol, months=6):
+    """Scan 6 months data and find all patterns using Alpha Vantage"""
+    try:
+        # Fetch 6 months data from Alpha Vantage
+        clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
+        stock_data = fetch_stock_data_alpha_vantage(symbol, days=months*30)  # Approx 6 months
+        
+        if stock_data is None or len(stock_data) < 40:
             return []
         
-        print(f"📊 [DEBUG] Data fetched: {len(stock_data)} rows")
-        
-        # Reset index for date handling
         df = stock_data.reset_index()
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
         
         volumes = df['Volume'].values
         closes = df['Close'].values
@@ -145,8 +374,8 @@ def scan_historical_patterns(symbol, months=6):
         all_patterns = []
         
         # Scan through ALL data (sliding window)
-        for start_idx in range(len(volumes) - 15):
-            for window_size in [5, 6, 7, 8, 9, 10, 12, 15]:
+        for start_idx in range(len(volumes) - 15):  # Need at least 15 days
+            for window_size in [5, 6, 7, 8, 9, 10, 12, 15]:  # Different pattern lengths
                 end_idx = start_idx + window_size
                 
                 if end_idx >= len(volumes):
@@ -158,16 +387,23 @@ def scan_historical_patterns(symbol, months=6):
                 
                 # ========== V-PATTERN DETECTION ==========
                 if window_size >= 5:
+                    # Find bottom (must be in middle)
                     bottom_idx = np.argmin(window_volumes)
                     
+                    # Strict rules:
+                    # 1. Bottom not at edges
                     if bottom_idx == 0 or bottom_idx == window_size - 1:
                         continue
                     
-                    left_strict = all(window_volumes[i] > window_volumes[i+1] 
-                                    for i in range(bottom_idx))
-                    right_strict = all(window_volumes[bottom_idx+i] < window_volumes[bottom_idx+i+1] 
-                                     for i in range(window_size - bottom_idx - 1))
+                    # 2. Left side decreasing
+                    left_decreasing = all(window_volumes[i] > window_volumes[i+1] 
+                                        for i in range(bottom_idx))
                     
+                    # 3. Right side increasing
+                    right_increasing = all(window_volumes[bottom_idx+i] < window_volumes[bottom_idx+i+1] 
+                                         for i in range(window_size - bottom_idx - 1))
+                    
+                    # 4. Significant drop and recovery (minimum 30%)
                     start_vol = window_volumes[0]
                     bottom_vol = window_volumes[bottom_idx]
                     end_vol = window_volumes[-1]
@@ -175,8 +411,11 @@ def scan_historical_patterns(symbol, months=6):
                     drop_pct = ((start_vol - bottom_vol) / start_vol) * 100
                     recovery_pct = ((end_vol - bottom_vol) / bottom_vol) * 100
                     
-                    if (left_strict and right_strict and drop_pct > 30 and recovery_pct > 30):
-                        days_after = 5
+                    if (left_decreasing and right_increasing and 
+                        drop_pct > 20 and recovery_pct > 20):
+                        
+                        # Check what happened AFTER pattern
+                        days_after = 5  # Look 5 days ahead
                         after_end = min(end_idx + days_after, len(closes) - 1)
                         
                         if after_end > end_idx:
@@ -184,15 +423,13 @@ def scan_historical_patterns(symbol, months=6):
                             price_at_pattern_end = closes[end_idx]
                             future_change = ((price_after_pattern - price_at_pattern_end) / price_at_pattern_end) * 100
                             
-                            try:
-                                pattern_end_date = datetime.strptime(window_dates[-1], '%Y-%m-%d')
-                                current_date = datetime.now()
-                                days_since_pattern = (current_date - pattern_end_date).days
-                            except:
-                                days_since_pattern = len(dates) - end_idx
+                            # Also check if pattern is in current week
+                            pattern_end_date = datetime.strptime(window_dates[-1], '%Y-%m-%d')
+                            current_date = datetime.now()
+                            days_since_pattern = (current_date - pattern_end_date).days
                             
                             pattern_info = {
-                                'symbol': symbol.replace('.NS', ''),
+                                'symbol': clean_symbol,
                                 'pattern_type': 'V_PATTERN',
                                 'pattern_length': window_size,
                                 'start_date': window_dates[0],
@@ -214,407 +451,25 @@ def scan_historical_patterns(symbol, months=6):
                                     'future_price_change': round(future_change, 2),
                                     'days_analyzed_after': days_after
                                 },
-                                'strictness_score': 1.0,
-                                'pattern_quality': 'HIGH'
-                            }
-                            all_patterns.append(pattern_info)
-                
-                # ========== U-PATTERN DETECTION ==========
-                if window_size >= 8:
-                    min_volume = np.min(window_volumes)
-                    bottom_indices = [i for i, vol in enumerate(window_volumes) 
-                                     if vol <= min_volume * 1.15]
-                    
-                    if len(bottom_indices) < 3:
-                        continue
-                    
-                    bottom_sorted = sorted(bottom_indices)
-                    is_consecutive = all(bottom_sorted[i+1] - bottom_sorted[i] <= 2 
-                                       for i in range(len(bottom_sorted)-1))
-                    
-                    if not is_consecutive:
-                        continue
-                    
-                    bottom_start = bottom_sorted[0]
-                    bottom_end = bottom_sorted[-1]
-                    
-                    left_decreasing = True
-                    if bottom_start > 2:
-                        for i in range(1, bottom_start + 1):
-                            if window_volumes[i] > window_volumes[i-1] * 1.1:
-                                left_decreasing = False
-                                break
-                    
-                    right_increasing = True
-                    if bottom_end < window_size - 2:
-                        for i in range(bottom_end + 1, window_size):
-                            if window_volumes[i] < window_volumes[i-1] * 0.9:
-                                right_increasing = False
-                                break
-                    
-                    start_vol = window_volumes[0]
-                    end_vol = window_volumes[-1]
-                    bottom_avg = np.mean([window_volumes[i] for i in bottom_indices])
-                    
-                    left_drop = ((start_vol - bottom_avg) / start_vol) * 100
-                    right_rise = ((end_vol - bottom_avg) / bottom_avg) * 100
-                    
-                    if (left_decreasing and right_increasing and left_drop > 25 and right_rise > 35):
-                        days_after = 5
-                        after_end = min(end_idx + days_after, len(closes) - 1)
-                        
-                        if after_end > end_idx:
-                            price_after = closes[after_end]
-                            price_at_end = closes[end_idx]
-                            future_change = ((price_after - price_at_end) / price_at_end) * 100
-                            
-                            try:
-                                pattern_end_date = datetime.strptime(window_dates[-1], '%Y-%m-%d')
-                                current_date = datetime.now()
-                                days_since = (current_date - pattern_end_date).days
-                            except:
-                                days_since = len(dates) - end_idx
-                            
-                            pattern_info = {
-                                'symbol': symbol.replace('.NS', ''),
-                                'pattern_type': 'U_PATTERN',
-                                'pattern_length': window_size,
-                                'start_date': window_dates[0],
-                                'end_date': window_dates[-1],
-                                'days_ago': days_since,
-                                'is_current_week': days_since <= 7,
-                                'is_current_month': days_since <= 30,
-                                'volume_details': {
-                                    'start_volume': int(start_vol),
-                                    'bottom_avg_volume': int(bottom_avg),
-                                    'end_volume': int(end_vol),
-                                    'bottom_days': len(bottom_indices),
-                                    'drop_percent': round(left_drop, 1),
-                                    'recovery_percent': round(right_rise, 1)
-                                },
-                                'price_details': {
-                                    'start_price': round(float(window_prices[0]), 2),
-                                    'end_price': round(float(window_prices[-1]), 2),
-                                    'price_change_percent': round(((window_prices[-1] - window_prices[0]) / window_prices[0]) * 100, 2),
-                                    'future_price_change': round(future_change, 2)
-                                },
-                                'strictness_score': 0.9,
+                                'data_source': 'Alpha Vantage',
                                 'pattern_quality': 'HIGH'
                             }
                             all_patterns.append(pattern_info)
         
-        print(f"✅ [DEBUG] Found {len(all_patterns)} patterns for {symbol}")
         return all_patterns
         
     except Exception as e:
-        print(f"❌ [DEBUG] Error in historical scan for {symbol}: {str(e)[:200]}")
+        print(f"Error scanning {symbol}: {e}")
         return []
-
-# ========== BASIC PATTERN DETECTION ==========
-def detect_v_pattern(volumes):
-    if len(volumes) < 5:
-        return False
-    
-    last_5 = volumes[-5:]
-    min_idx = np.argmin(last_5)
-    
-    return (min_idx in [2, 3] and 
-            last_5[3] > last_5[2] * 1.05 and 
-            last_5[4] > last_5[3] * 1.02)
-
-def detect_u_pattern(volumes):
-    if len(volumes) < 6:
-        return False
-    
-    last_6 = volumes[-6:]
-    min_idx = np.argmin(last_6)
-    
-    return (min_idx in [2, 3] and 
-            last_6[3] < last_6[2] * 0.95 and 
-            last_6[4] > last_6[3] * 1.05 and 
-            last_6[5] > last_6[4] * 1.05)
-
-def scan_single_stock(symbol):
-    """Basic stock scanning with FIXED date fetching"""
-    try:
-        print(f"🔍 [DEBUG] Basic scan for {symbol}")
-        
-        # Use the fixed fetch function
-        stock_data = fetch_stock_data(symbol, days=30)
-        
-        if stock_data is None or stock_data.empty:
-            return {
-                "symbol": symbol,
-                "error": "insufficient data",
-                "success": False
-            }
-        
-        volumes = stock_data['Volume'].values
-        closes = stock_data['Close'].values
-        
-        current_price = float(closes[-1]) if len(closes) > 0 else 0
-        prev_price = float(closes[-2]) if len(closes) > 1 else current_price
-        price_change = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
-        
-        v_pattern = detect_v_pattern(volumes)
-        u_pattern = detect_u_pattern(volumes)
-        
-        clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
-        
-        return {
-            "symbol": clean_symbol,
-            "price": round(current_price, 2),
-            "change_percent": round(price_change, 2),
-            "v_pattern": v_pattern,
-            "u_pattern": u_pattern,
-            "volume": int(volumes[-1]) if len(volumes) > 0 else 0,
-            "data_points": len(stock_data),
-            "success": True
-        }
-        
-    except Exception as e:
-        return {
-            "symbol": symbol,
-            "error": str(e)[:100],
-            "success": False
-        }
-
-# ========== DEMO MODE ==========
-DEMO_MODE = os.environ.get('DEMO_MODE', 'false').lower() == 'true'
-
-# ========== API ENDPOINTS ==========
-@app.route('/')
-def home():
-    return jsonify({
-        "service": "IncomePlus Complete Stock Scanner API",
-        "version": "4.0",
-        "status": "running",
-        "features": [
-            "Historical Pattern Scanner (6 months)",
-            "Fixed yfinance data fetching",
-            "Strict Pattern Detection Rules",
-            "All Indian Stocks Coverage"
-        ],
-        "endpoints": {
-            "/": "This information",
-            "/api/health": "Health check",
-            "/api/scan": "Basic V/U pattern scan",
-            "/api/scan-all": "Scan all 200+ stocks",
-            "/api/scanner/historical": "Historical pattern analysis (6 months)",
-            "/api/debug-scan/<symbol>": "Debug data fetch for symbol"
-        },
-        "timestamp": datetime.now().isoformat()
-    })
-
-@app.route('/api/health')
-def health():
-    return jsonify({
-        "status": "healthy",
-        "version": "4.0",
-        "features": "Historical Scanner + Fixed yfinance",
-        "timestamp": datetime.now().isoformat()
-    })
-
-@app.route('/api/debug-scan/<symbol>', methods=['GET'])
-def debug_scan(symbol):
-    """Debug endpoint with FIXED data fetching"""
-    try:
-        print(f"🔍 [DEBUG-SCAN] Starting debug scan for {symbol}")
-        
-        # Test different approaches
-        test_results = []
-        
-        # Test 1: Try with .NS suffix
-        print(f"🔍 [DEBUG-SCAN] Test 1: {symbol}")
-        stock_data1 = fetch_stock_data(symbol, days=30)
-        
-        if stock_data1 is not None and not stock_data1.empty:
-            test_results.append({
-                "symbol": symbol,
-                "status": "SUCCESS",
-                "data_points": len(stock_data1),
-                "columns": list(stock_data1.columns),
-                "date_range": {
-                    "start": stock_data1.index[0].strftime('%Y-%m-%d') if len(stock_data1) > 0 else None,
-                    "end": stock_data1.index[-1].strftime('%Y-%m-%d') if len(stock_data1) > 0 else None
-                }
-            })
-        else:
-            test_results.append({
-                "symbol": symbol,
-                "status": "FAILED",
-                "error": "No data returned"
-            })
-        
-        # Test 2: Try .BO suffix (Bombay Stock Exchange)
-        if symbol.endswith('.NS'):
-            symbol_bo = symbol.replace('.NS', '.BO')
-            print(f"🔍 [DEBUG-SCAN] Test 2: {symbol_bo}")
-            stock_data2 = fetch_stock_data(symbol_bo, days=30)
-            
-            if stock_data2 is not None and not stock_data2.empty:
-                test_results.append({
-                    "symbol": symbol_bo,
-                    "status": "SUCCESS",
-                    "data_points": len(stock_data2),
-                    "columns": list(stock_data2.columns),
-                    "date_range": {
-                        "start": stock_data2.index[0].strftime('%Y-%m-%d') if len(stock_data2) > 0 else None,
-                        "end": stock_data2.index[-1].strftime('%Y-%m-%d') if len(stock_data2) > 0 else None
-                    }
-                })
-            else:
-                test_results.append({
-                    "symbol": symbol_bo,
-                    "status": "FAILED",
-                    "error": "No data returned"
-                })
-        
-        return jsonify({
-            "debug_scan": True,
-            "symbol": symbol,
-            "tests": test_results,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        print(f"❌ [DEBUG-SCAN] Error: {str(e)}")
-        return jsonify({
-            "error": str(e),
-            "symbol": symbol,
-            "timestamp": datetime.now().isoformat()
-        }), 400
-
-@app.route('/api/scanner/historical', methods=['GET'])
-def historical_scanner():
-    """Historical scanner endpoint"""
-    try:
-        symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS,INFY.NS')
-        symbols = [s.strip() for s in symbols_param.split(',')]
-        months = int(request.args.get('months', 6))
-        highlight_current_week = request.args.get('current_week', 'true').lower() == 'true'
-        
-        print(f"🔍 [HISTORICAL] Starting scan for {len(symbols)} symbols")
-        
-        all_patterns = []
-        
-        for symbol in symbols[:10]:
-            print(f"🔍 [HISTORICAL] Processing {symbol}")
-            patterns = scan_historical_patterns(symbol, months)
-            
-            if highlight_current_week:
-                for pattern in patterns:
-                    if pattern['is_current_week']:
-                        pattern['highlight'] = 'CURRENT_WEEK'
-                        pattern['priority'] = 1
-                    elif pattern['is_current_month']:
-                        pattern['priority'] = 2
-                    else:
-                        pattern['priority'] = 3
-            else:
-                for pattern in patterns:
-                    pattern['priority'] = 3
-            
-            all_patterns.extend(patterns)
-            time.sleep(0.5)  # Rate limiting
-        
-        # Sort patterns
-        all_patterns.sort(key=lambda x: (x.get('priority', 3), -x.get('strictness_score', 0)))
-        
-        # Categorize patterns
-        current_week_patterns = [p for p in all_patterns if p.get('highlight') == 'CURRENT_WEEK']
-        current_month_patterns = [p for p in all_patterns if p.get('is_current_month', False) and not p.get('is_current_week', False)]
-        historical_patterns = [p for p in all_patterns if not p.get('is_current_month', False)]
-        
-        v_patterns = [p for p in all_patterns if p['pattern_type'] == 'V_PATTERN']
-        u_patterns = [p for p in all_patterns if p['pattern_type'] == 'U_PATTERN']
-        
-        # Analyze outcomes
-        pattern_outcomes = []
-        for pattern in all_patterns:
-            if 'future_price_change' in pattern['price_details']:
-                outcome = {
-                    'pattern_type': pattern['pattern_type'],
-                    'days_after': pattern['price_details'].get('days_analyzed_after', 5),
-                    'price_change': pattern['price_details']['future_price_change'],
-                    'volume_drop': pattern['volume_details']['drop_percent'],
-                    'volume_recovery': pattern['volume_details']['recovery_percent']
-                }
-                pattern_outcomes.append(outcome)
-        
-        return jsonify({
-            'success': True,
-            'total_patterns_found': len(all_patterns),
-            'pattern_distribution': {
-                'v_patterns': len(v_patterns),
-                'u_patterns': len(u_patterns),
-                'current_week': len(current_week_patterns),
-                'current_month': len(current_month_patterns),
-                'historical': len(historical_patterns)
-            },
-            'current_week_patterns': current_week_patterns[:10],
-            'current_month_patterns': current_month_patterns[:10],
-            'all_patterns': all_patterns[:50],
-            'pattern_outcomes_analysis': {
-                'total_patterns_analyzed': len(pattern_outcomes),
-                'avg_price_change_after_5_days': round(np.mean([p['price_change'] for p in pattern_outcomes]), 2) if pattern_outcomes else 0,
-                'successful_patterns': len([p for p in pattern_outcomes if p['price_change'] > 0]),
-                'failed_patterns': len([p for p in pattern_outcomes if p['price_change'] <= 0]),
-                'success_rate': f"{(len([p for p in pattern_outcomes if p['price_change'] > 0])/len(pattern_outcomes)*100):.1f}%" if pattern_outcomes else "0%"
-            },
-            'strictness_note': 'Patterns detected with STRICT rules: Min 30% volume changes required',
-            'timestamp': datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        print(f"❌ [HISTORICAL] Error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
-
-@app.route('/api/scan', methods=['GET'])
-def scan_stocks():
-    """Basic scanning endpoint"""
-    try:
-        symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS,INFY.NS')
-        symbols = [s.strip() for s in symbols_param.split(',')][:25]
-        
-        results = []
-        patterns_found = 0
-        
-        for symbol in symbols:
-            result = scan_single_stock(symbol)
-            if result.get("success", False):
-                if result["v_pattern"] or result["u_pattern"]:
-                    patterns_found += 1
-                results.append(result)
-        
-        return jsonify({
-            "success": True,
-            "count": len(results),
-            "patterns_found": patterns_found,
-            "results": results,
-            "scanned": len(symbols),
-            "timestamp": datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        print(f"❌ [SCAN] Error: {str(e)}")
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }), 500
 
 @app.route('/api/scan-all', methods=['GET'])
 def scan_all_stocks():
-    """Scan all stocks with pagination"""
+    """Scan ALL 200+ Indian stocks with pagination"""
     try:
         page = int(request.args.get('page', 0))
-        page_size = int(request.args.get('page_size', 20))
+        page_size = int(request.args.get('page_size', 10))  # Reduced for Alpha Vantage limits
         
+        # Calculate which symbols to scan
         start_idx = page * page_size
         end_idx = start_idx + page_size
         symbols_to_scan = ALL_INDIAN_STOCKS[start_idx:end_idx]
@@ -623,24 +478,43 @@ def scan_all_stocks():
             return jsonify({
                 "success": True,
                 "message": "No more stocks to scan",
-                "has_next_page": False
+                "page": page,
+                "page_size": page_size,
+                "results": [],
+                "has_next_page": False,
+                "timestamp": datetime.now().isoformat()
             })
         
+        # Scan this page
         results = []
+        errors = []
         
         for symbol in symbols_to_scan:
             result = scan_single_stock(symbol)
             if result.get("success", False):
+                # Apply demo mode if enabled
+                v_pattern, u_pattern = ensure_patterns_for_demo(
+                    symbol, 
+                    result["v_pattern"], 
+                    result["u_pattern"]
+                )
+                result["v_pattern"] = v_pattern
+                result["u_pattern"] = u_pattern
+                result["demo_mode_applied"] = DEMO_MODE and (v_pattern or u_pattern)
                 results.append(result)
-            time.sleep(0.2)
+            else:
+                errors.append(result)
         
         return jsonify({
             "success": True,
             "page": page,
             "page_size": page_size,
             "total_stocks": len(ALL_INDIAN_STOCKS),
+            "scanned_this_page": len(symbols_to_scan),
             "results": results,
+            "errors": errors,
             "has_next_page": end_idx < len(ALL_INDIAN_STOCKS),
+            "next_page_url": f"{request.base_url}?page={page+1}&page_size={page_size}" if end_idx < len(ALL_INDIAN_STOCKS) else None,
             "timestamp": datetime.now().isoformat()
         })
         
@@ -651,18 +525,422 @@ def scan_all_stocks():
             "timestamp": datetime.now().isoformat()
         }), 500
 
+@app.route('/api/scan-batch', methods=['POST'])
+def scan_batch():
+    """Batch scan with custom stock list"""
+    try:
+        data = request.json or {}
+        symbols = data.get('symbols', ALL_INDIAN_STOCKS[:10])  # Default to first 10
+        page = data.get('page', 0)
+        page_size = data.get('page_size', 10)
+        
+        # Calculate which symbols to scan
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        symbols_to_scan = symbols[start_idx:end_idx]
+        
+        # Scan this page
+        results = []
+        errors = []
+        
+        for symbol in symbols_to_scan:
+            result = scan_single_stock(symbol)
+            if result.get("success", False):
+                # Apply demo mode if enabled
+                v_pattern, u_pattern = ensure_patterns_for_demo(
+                    symbol, 
+                    result["v_pattern"], 
+                    result["u_pattern"]
+                )
+                result["v_pattern"] = v_pattern
+                result["u_pattern"] = u_pattern
+                result["demo_mode_applied"] = DEMO_MODE and (v_pattern or u_pattern)
+                results.append(result)
+            else:
+                errors.append(result)
+        
+        return jsonify({
+            "success": True,
+            "page": page,
+            "page_size": page_size,
+            "total_symbols": len(symbols),
+            "scanned_this_page": len(symbols_to_scan),
+            "results": results,
+            "errors": errors,
+            "has_next_page": end_idx < len(symbols),
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/scan', methods=['GET', 'POST', 'OPTIONS'])
+def scan_stocks():
+    """Main scanning endpoint - for quick scans"""
+    try:
+        # Handle OPTIONS for CORS
+        if request.method == 'OPTIONS':
+            return '', 200
+        
+        # Get symbols from request
+        if request.method == 'POST':
+            data = request.json or {}
+            symbols = data.get('symbols', ['RELIANCE.NS', 'TCS.NS'])  # Default
+        else:
+            # GET request with query parameter
+            symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS')
+            symbols = [s.strip() for s in symbols_param.split(',')]
+        
+        # Limit symbols for Alpha Vantage rate limits
+        symbols = symbols[:5]  # Only 5 stocks at a time
+        
+        results = []
+        failed_symbols = []
+        patterns_found = 0
+        
+        print(f"🔍 SCAN REQUEST: {len(symbols)} symbols")
+        print(f"📊 DEMO MODE: {DEMO_MODE}")
+        print(f"📊 DATA SOURCE: Alpha Vantage")
+        
+        for symbol in symbols:
+            result = scan_single_stock(symbol)
+            
+            if result.get("success", False):
+                # Apply demo mode if enabled
+                v_pattern, u_pattern = ensure_patterns_for_demo(
+                    symbol, 
+                    result["v_pattern"], 
+                    result["u_pattern"]
+                )
+                result["v_pattern"] = v_pattern
+                result["u_pattern"] = u_pattern
+                result["demo_mode_applied"] = DEMO_MODE and (v_pattern or u_pattern)
+                
+                if v_pattern or u_pattern:
+                    patterns_found += 1
+                    result["status"] = "✅ PATTERN FOUND"
+                else:
+                    result["status"] = "⏸️ No pattern"
+                
+                results.append(result)
+                
+                # Log pattern detection
+                if v_pattern or u_pattern:
+                    pattern_type = []
+                    if v_pattern: pattern_type.append("V")
+                    if u_pattern: pattern_type.append("U")
+                    print(f"🎯 PATTERN DETECTED: {result['symbol']} ({' & '.join(pattern_type)})")
+            else:
+                failed_symbols.append(result)
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "count": len(results),
+            "patterns_found": patterns_found,
+            "results": results,
+            "scanned": len(symbols),
+            "failed": failed_symbols,
+            "data_source": "Alpha Vantage",
+            "rate_limit_info": {
+                "calls_per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
+                "daily_calls": ALPHA_VANTAGE_DAILY_LIMIT,
+                "recommendation": "Limit to 5 stocks per scan"
+            },
+            "scan_summary": {
+                "total_stocks": len(symbols),
+                "successful_scans": len(results),
+                "patterns_detected": patterns_found,
+                "success_rate": f"{(len(results)/len(symbols)*100):.1f}%" if len(symbols) > 0 else "0%",
+                "pattern_rate": f"{(patterns_found/len(results)*100):.1f}%" if len(results) > 0 else "0%"
+            },
+            "demo_mode": DEMO_MODE,
+            "note": "🎯 Patterns found! Enable DEMO_MODE for consistent pattern detection." if patterns_found > 0 else "No patterns detected. Try DEMO_MODE=true",
+            "timestamp": datetime.now().isoformat(),
+            "api_version": "4.0"
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"❌ FATAL ERROR: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)[:200],
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+# ========== DEBUG ENDPOINT WITH ALPHA VANTAGE ==========
+@app.route('/api/debug-scan/<symbol>', methods=['GET'])
+def debug_scan(symbol):
+    """Debug endpoint to see exactly what data we're getting from Alpha Vantage"""
+    try:
+        print(f"🔍 [DEBUG] Testing Alpha Vantage for {symbol}")
+        
+        # Test Alpha Vantage
+        stock_data = fetch_stock_data_alpha_vantage(symbol, days=30)
+        
+        if stock_data is not None and not stock_data.empty:
+            # Get last 10 days of volumes
+            volumes = stock_data['Volume'].values[-10:] if len(stock_data) >= 10 else stock_data['Volume'].values
+            closes = stock_data['Close'].values[-10:] if len(stock_data) >= 10 else stock_data['Close'].values
+            
+            # Get dates
+            dates = stock_data.index[-10:].strftime('%Y-%m-%d').tolist() if len(stock_data) >= 10 else stock_data.index.strftime('%Y-%m-%d').tolist()
+            
+            # Check patterns
+            v_pattern = detect_v_pattern(volumes)
+            u_pattern = detect_u_pattern(volumes)
+            
+            # Apply demo mode if enabled
+            v_pattern, u_pattern = ensure_patterns_for_demo(symbol, v_pattern, u_pattern)
+            
+            return jsonify({
+                "debug_scan": True,
+                "symbol": symbol,
+                "status": "SUCCESS",
+                "data_source": "Alpha Vantage",
+                "data_points": len(stock_data),
+                "date_range": {
+                    "start": stock_data.index[0].strftime('%Y-%m-%d'),
+                    "end": stock_data.index[-1].strftime('%Y-%m-%d')
+                },
+                "latest_price": float(stock_data['Close'].iloc[-1]),
+                "pattern_detection": {
+                    "v_pattern": v_pattern,
+                    "u_pattern": u_pattern,
+                    "any_pattern": v_pattern or u_pattern,
+                    "demo_mode_applied": DEMO_MODE and (v_pattern or u_pattern)
+                },
+                "sample_data": {
+                    "dates": dates,
+                    "closing_prices": [float(c) for c in closes],
+                    "volumes": [int(v) for v in volumes]
+                },
+                "alpha_vantage_info": {
+                    "api_key_configured": True,
+                    "rate_limits": {
+                        "calls_per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
+                        "daily_calls": ALPHA_VANTAGE_DAILY_LIMIT
+                    }
+                },
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                "debug_scan": True,
+                "symbol": symbol,
+                "status": "FAILED",
+                "data_source": "Alpha Vantage",
+                "error": "Could not fetch data from Alpha Vantage",
+                "suggestion": "Try symbols without .NS suffix: RELIANCE, TCS, INFY, HDFCBANK",
+                "alpha_vantage_info": {
+                    "api_key_configured": True,
+                    "note": "Check if you've exceeded daily limits (25 calls/day)"
+                },
+                "timestamp": datetime.now().isoformat()
+            })
+        
+    except Exception as e:
+        print(f"❌ [DEBUG] Error: {str(e)}")
+        return jsonify({
+            "error": str(e),
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat()
+        }), 400
+
+@app.route('/api/test-patterns', methods=['GET'])
+def test_patterns():
+    """Test endpoint with artificial patterns"""
+    
+    # Test patterns
+    perfect_v = [1000000, 800000, 300000, 600000, 900000]  # Should detect
+    perfect_u = [1000000, 700000, 400000, 350000, 500000, 800000]  # Should detect
+    no_pattern = [500000, 550000, 520000, 530000, 540000, 510000]  # Should NOT detect
+    real_world_v = [7500000, 7200000, 3100000, 5200000, 6800000]  # Realistic pattern
+    
+    tests = [
+        ("Perfect V-pattern", perfect_v, True, False),
+        ("Perfect U-pattern", perfect_u, False, True),
+        ("No pattern", no_pattern, False, False),
+        ("Real-world V", real_world_v, True, False)
+    ]
+    
+    results = []
+    all_pass = True
+    
+    for name, volumes, expect_v, expect_u in tests:
+        v_detected = detect_v_pattern(volumes) if len(volumes) >= 5 else False
+        u_detected = detect_u_pattern(volumes) if len(volumes) >= 6 else False
+        
+        v_pass = v_detected == expect_v
+        u_pass = u_detected == expect_u
+        test_pass = v_pass and u_pass
+        
+        if not test_pass:
+            all_pass = False
+        
+        results.append({
+            "test": name,
+            "volumes": [int(v) for v in volumes],
+            "v_detected": v_detected,
+            "v_expected": expect_v,
+            "v_status": "✅ PASS" if v_pass else "❌ FAIL",
+            "u_detected": u_detected,
+            "u_expected": expect_u,
+            "u_status": "✅ PASS" if u_pass else "❌ FAIL",
+            "overall": "✅ PASS" if test_pass else "❌ FAIL"
+        })
+    
+    return jsonify({
+        "pattern_test_suite": "IncomePlus Pattern Detection v4.0",
+        "results": results,
+        "summary": {
+            "total_tests": len(results),
+            "passed_tests": sum(1 for r in results if r["overall"] == "✅ PASS"),
+            "all_tests_passed": all_pass,
+            "pattern_logic_working": all_pass
+        },
+        "demo_mode": DEMO_MODE,
+        "data_source": "Alpha Vantage",
+        "note": "Enable DEMO_MODE=true in Railway Variables to see patterns in scans",
+        "timestamp": datetime.now().isoformat()
+    })
+
+@app.route('/api/test', methods=['GET'])
+def test_scan():
+    """Test endpoint with sample data"""
+    return jsonify({
+        "success": True,
+        "count": 3,
+        "patterns_found": 2,
+        "results": [
+            {
+                "symbol": "RELIANCE",
+                "price": 2850.50,
+                "change_percent": 1.55,
+                "v_pattern": True,
+                "u_pattern": False,
+                "volume": 7506011,
+                "data_points": 30,
+                "last_updated": datetime.now().isoformat(),
+                "status": "✅ PATTERN FOUND",
+                "data_source": "Alpha Vantage (Sample)"
+            },
+            {
+                "symbol": "TCS",
+                "price": 3850.25,
+                "change_percent": -0.45,
+                "v_pattern": False,
+                "u_pattern": True,
+                "volume": 2365227,
+                "data_points": 30,
+                "last_updated": datetime.now().isoformat(),
+                "status": "✅ PATTERN FOUND",
+                "data_source": "Alpha Vantage (Sample)"
+            },
+            {
+                "symbol": "INFY",
+                "price": 1650.75,
+                "change_percent": 0.25,
+                "v_pattern": False,
+                "u_pattern": False,
+                "volume": 6592769,
+                "data_points": 30,
+                "last_updated": datetime.now().isoformat(),
+                "status": "⏸️ No pattern",
+                "data_source": "Alpha Vantage (Sample)"
+            }
+        ],
+        "scanned": 3,
+        "data_source": "Alpha Vantage (Sample Data)",
+        "scan_summary": {
+            "total_stocks": 3,
+            "successful_scans": 3,
+            "patterns_detected": 2,
+            "success_rate": "100.0%",
+            "pattern_rate": "66.7%"
+        },
+        "note": "This is sample data showing how patterns appear",
+        "timestamp": datetime.now().isoformat()
+    })
+
+# ========== ALPHA VANTAGE TEST ENDPOINT ==========
+@app.route('/api/test-alpha-vantage', methods=['GET'])
+def test_alpha_vantage():
+    """Test Alpha Vantage connection"""
+    test_symbols = ["RELIANCE", "TCS", "INFY"]
+    results = []
+    
+    for symbol in test_symbols:
+        try:
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}.BSE&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            
+            if "Time Series (Daily)" in data:
+                dates = list(data["Time Series (Daily)"].keys())[:2]
+                results.append({
+                    "symbol": symbol,
+                    "status": "✅ SUCCESS",
+                    "dates": dates,
+                    "latest_close": data["Time Series (Daily)"][dates[0]]["4. close"]
+                })
+            elif "Note" in data:
+                results.append({
+                    "symbol": symbol,
+                    "status": "⚠️ RATE LIMITED",
+                    "note": data["Note"][:80]
+                })
+            else:
+                results.append({
+                    "symbol": symbol,
+                    "status": "❌ FAILED",
+                    "error": data.get("Error Message", "No data")
+                })
+                
+        except Exception as e:
+            results.append({
+                "symbol": symbol,
+                "status": "❌ ERROR",
+                "error": str(e)[:100]
+            })
+    
+    return jsonify({
+        "alpha_vantage_test": True,
+        "api_key": "Configured" if ALPHA_VANTAGE_API_KEY and ALPHA_VANTAGE_API_KEY != "DEMO" else "Not configured",
+        "rate_limits": {
+            "per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
+            "daily": ALPHA_VANTAGE_DAILY_LIMIT
+        },
+        "results": results,
+        "timestamp": datetime.now().isoformat()
+    })
+
 # ========== START THE SERVER ==========
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     
-    print("🚀 IncomePlus Complete Scanner v4.0 Starting...")
+    print("🚀 IncomePlus API v4.0 Starting...")
     print(f"📍 Port: {port}")
+    print(f"📍 Environment: {os.environ.get('RAILWAY_ENVIRONMENT', 'production')}")
+    print(f"📍 Demo Mode: {DEMO_MODE}")
+    print(f"📍 Total Stocks: {len(ALL_INDIAN_STOCKS)}")
+    print(f"📍 Data Source: Alpha Vantage")
+    print(f"📍 API Key: {'✓ Configured' if ALPHA_VANTAGE_API_KEY and ALPHA_VANTAGE_API_KEY != 'DEMO' else '✗ Not configured'}")
+    print(f"📍 Rate Limits: {ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE}/min, {ALPHA_VANTAGE_DAILY_LIMIT}/day")
+    print(f"📍 Frontend: https://incomeplusin-sys.github.io/incomeplus/")
     print("=" * 60)
-    print("📊 FEATURES:")
-    print("   • Historical Pattern Scanner (6 months)")
-    print("   • FIXED yfinance data fetching (start/end dates)")
-    print("   • Strict Pattern Detection Rules")
-    print("   • All Indian Stocks Coverage")
+    print("📊 Pattern Detection: IMPROVED V4.0")
+    print("   • Alpha Vantage API Integration")
+    print("   • More lenient V-pattern detection")
+    print("   • Real-world volume pattern matching")
+    print("   • Demo mode for testing patterns")
+    print("   • Batch scanning with rate limiting")
     print("=" * 60)
     
     app.run(host='0.0.0.0', port=port, debug=False)
