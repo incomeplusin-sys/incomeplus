@@ -316,6 +316,208 @@ def check_ema_condition(pattern_volumes, ema_value):
         return "WITHOUT_EMA"
     else:
         return "MIXED"
+# ========== HISTORICAL PATTERN SCANNER (ADD THIS) ==========
+def scan_historical_patterns(symbol, months=6):
+    """Scan 6 months data and find all patterns with STRICT rules"""
+    try:
+        # Fetch 6 months data
+        stock = yf.Ticker(symbol)
+        df = stock.history(period=f"{months}mo", interval='1d')
+        
+        if df.empty or len(df) < 40:
+            return []
+        
+        # Reset index for date handling
+        df = df.reset_index()
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+        
+        volumes = df['Volume'].values
+        closes = df['Close'].values
+        dates = df['Date'].values
+        
+        all_patterns = []
+        
+        # Scan through ALL data (sliding window)
+        for start_idx in range(len(volumes) - 15):  # Need at least 15 days
+            for window_size in [5, 6, 7, 8, 9, 10, 12, 15]:  # Different pattern lengths
+                end_idx = start_idx + window_size
+                
+                if end_idx >= len(volumes):
+                    continue
+                
+                window_volumes = volumes[start_idx:end_idx]
+                window_dates = dates[start_idx:end_idx]
+                window_prices = closes[start_idx:end_idx]
+                
+                # ========== STRICT V-PATTERN DETECTION ==========
+                if window_size >= 5:
+                    # Find bottom (must be in middle)
+                    bottom_idx = np.argmin(window_volumes)
+                    
+                    # Strict rules:
+                    # 1. Bottom not at edges
+                    if bottom_idx == 0 or bottom_idx == window_size - 1:
+                        continue
+                    
+                    # 2. Left side STRICTLY decreasing
+                    left_strict = all(window_volumes[i] > window_volumes[i+1] 
+                                    for i in range(bottom_idx))
+                    
+                    # 3. Right side STRICTLY increasing
+                    right_strict = all(window_volumes[bottom_idx+i] < window_volumes[bottom_idx+i+1] 
+                                     for i in range(window_size - bottom_idx - 1))
+                    
+                    # 4. Significant drop and recovery (minimum 30%)
+                    start_vol = window_volumes[0]
+                    bottom_vol = window_volumes[bottom_idx]
+                    end_vol = window_volumes[-1]
+                    
+                    drop_pct = ((start_vol - bottom_vol) / start_vol) * 100
+                    recovery_pct = ((end_vol - bottom_vol) / bottom_vol) * 100
+                    
+                    if (left_strict and right_strict and 
+                        drop_pct > 30 and recovery_pct > 30):  # STRICT: 30% minimum
+                        
+                        # Check what happened AFTER pattern
+                        days_after = 5  # Look 5 days ahead
+                        after_end = min(end_idx + days_after, len(closes) - 1)
+                        
+                        if after_end > end_idx:
+                            price_after_pattern = closes[after_end]
+                            price_at_pattern_end = closes[end_idx]
+                            future_change = ((price_after_pattern - price_at_pattern_end) / price_at_pattern_end) * 100
+                            
+                            # Also check if pattern is in current week
+                            pattern_end_date = datetime.strptime(window_dates[-1], '%Y-%m-%d')
+                            current_date = datetime.now()
+                            days_since_pattern = (current_date - pattern_end_date).days
+                            
+                            pattern_info = {
+                                'symbol': symbol.replace('.NS', ''),
+                                'pattern_type': 'V_PATTERN',
+                                'pattern_length': window_size,
+                                'start_date': window_dates[0],
+                                'end_date': window_dates[-1],
+                                'days_ago': days_since_pattern,
+                                'is_current_week': days_since_pattern <= 7,
+                                'is_current_month': days_since_pattern <= 30,
+                                'volume_details': {
+                                    'start_volume': int(start_vol),
+                                    'bottom_volume': int(bottom_vol),
+                                    'end_volume': int(end_vol),
+                                    'drop_percent': round(drop_pct, 1),
+                                    'recovery_percent': round(recovery_pct, 1)
+                                },
+                                'price_details': {
+                                    'start_price': round(float(window_prices[0]), 2),
+                                    'end_price': round(float(window_prices[-1]), 2),
+                                    'price_change_percent': round(((window_prices[-1] - window_prices[0]) / window_prices[0]) * 100, 2),
+                                    'future_price_change': round(future_change, 2),
+                                    'days_analyzed_after': days_after
+                                },
+                                'strictness_score': 1.0,  # 1.0 = most strict
+                                'pattern_quality': 'HIGH'
+                            }
+                            all_patterns.append(pattern_info)
+                
+                # ========== STRICT U-PATTERN DETECTION ==========
+                if window_size >= 8:  # U patterns need more candles
+                    # Find extended bottom (multiple low days)
+                    min_volume = np.min(window_volumes)
+                    bottom_indices = [i for i, vol in enumerate(window_volumes) 
+                                     if vol <= min_volume * 1.15]  # Within 15% of min
+                    
+                    # Must have at least 3 bottom days
+                    if len(bottom_indices) < 3:
+                        continue
+                    
+                    # Bottom should be consecutive
+                    bottom_sorted = sorted(bottom_indices)
+                    is_consecutive = all(bottom_sorted[i+1] - bottom_sorted[i] <= 2 
+                                       for i in range(len(bottom_sorted)-1))
+                    
+                    if not is_consecutive:
+                        continue
+                    
+                    bottom_start = bottom_sorted[0]
+                    bottom_end = bottom_sorted[-1]
+                    
+                    # Left side should generally decrease
+                    left_decreasing = True
+                    if bottom_start > 2:
+                        for i in range(1, bottom_start + 1):
+                            if window_volumes[i] > window_volumes[i-1] * 1.1:
+                                left_decreasing = False
+                                break
+                    
+                    # Right side should generally increase
+                    right_increasing = True
+                    if bottom_end < window_size - 2:
+                        for i in range(bottom_end + 1, window_size):
+                            if window_volumes[i] < window_volumes[i-1] * 0.9:
+                                right_increasing = False
+                                break
+                    
+                    # Calculate U-shape metrics
+                    start_vol = window_volumes[0]
+                    end_vol = window_volumes[-1]
+                    bottom_avg = np.mean([window_volumes[i] for i in bottom_indices])
+                    
+                    left_drop = ((start_vol - bottom_avg) / start_vol) * 100
+                    right_rise = ((end_vol - bottom_avg) / bottom_avg) * 100
+                    
+                    # STRICT: Minimum 25% drop and 35% recovery
+                    if (left_decreasing and right_increasing and 
+                        left_drop > 25 and right_rise > 35):
+                        
+                        # Check aftermath
+                        days_after = 5
+                        after_end = min(end_idx + days_after, len(closes) - 1)
+                        
+                        if after_end > end_idx:
+                            price_after = closes[after_end]
+                            price_at_end = closes[end_idx]
+                            future_change = ((price_after - price_at_end) / price_at_end) * 100
+                            
+                            pattern_end_date = datetime.strptime(window_dates[-1], '%Y-%m-%d')
+                            current_date = datetime.now()
+                            days_since = (current_date - pattern_end_date).days
+                            
+                            pattern_info = {
+                                'symbol': symbol.replace('.NS', ''),
+                                'pattern_type': 'U_PATTERN',
+                                'pattern_length': window_size,
+                                'start_date': window_dates[0],
+                                'end_date': window_dates[-1],
+                                'days_ago': days_since,
+                                'is_current_week': days_since <= 7,
+                                'is_current_month': days_since <= 30,
+                                'volume_details': {
+                                    'start_volume': int(start_vol),
+                                    'bottom_avg_volume': int(bottom_avg),
+                                    'end_volume': int(end_vol),
+                                    'bottom_days': len(bottom_indices),
+                                    'drop_percent': round(left_drop, 1),
+                                    'recovery_percent': round(right_rise, 1)
+                                },
+                                'price_details': {
+                                    'start_price': round(float(window_prices[0]), 2),
+                                    'end_price': round(float(window_prices[-1]), 2),
+                                    'price_change_percent': round(((window_prices[-1] - window_prices[0]) / window_prices[0]) * 100, 2),
+                                    'future_price_change': round(future_change, 2)
+                                },
+                                'strictness_score': 0.9,
+                                'pattern_quality': 'HIGH'
+                            }
+                            all_patterns.append(pattern_info)
+        
+        return all_patterns
+        
+    except Exception as e:
+        print(f"Error scanning {symbol}: {e}")
+        return []
+
 
 # U Pattern Detection (from scanner)
 def detect_u_pattern_flexible(volumes):
