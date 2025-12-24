@@ -90,26 +90,35 @@ def fetch_stock_data_alpha_vantage(symbol, days=30):
         print(f"🔍 [ALPHA] Fetching {clean_symbol} for {days} days")
         
         # Try BSE first
+        print(f"   Trying BSE: {clean_symbol}.BSE")
         url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_symbol}.BSE&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
         
         response = requests.get(url, timeout=15)
         data = response.json()
         
         # Check if we got valid data
-        if "Time Series (Daily)" not in data:
-            print(f"⚠️ [ALPHA] BSE failed, trying NSE...")
-            
+        if "Time Series (Daily)" in data:
+            print(f"   ✅ Success with BSE for {clean_symbol}")
+        else:
             # Try NSE instead of BSE
+            print(f"   ❌ BSE failed, trying NSE: {clean_symbol}.NSE")
             url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_symbol}.NSE&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
             response = requests.get(url, timeout=15)
             data = response.json()
             
             if "Time Series (Daily)" not in data:
-                # Check if rate limited
-                if "Note" in data:
-                    print(f"⚠️ [ALPHA] Rate limited: {data['Note'][:80]}...")
-                print(f"❌ [ALPHA] Both BSE and NSE failed for {clean_symbol}")
-                return None
+                # Try without any exchange suffix
+                print(f"   ❌ NSE failed, trying without suffix: {clean_symbol}")
+                url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={clean_symbol}&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
+                response = requests.get(url, timeout=15)
+                data = response.json()
+                
+                if "Time Series (Daily)" not in data:
+                    # Check if rate limited
+                    if "Note" in data:
+                        print(f"⚠️ [ALPHA] Rate limited: {data['Note'][:80]}...")
+                    print(f"❌ [ALPHA] All attempts failed for {clean_symbol}")
+                    return None
         
         # Convert Alpha Vantage data to DataFrame
         time_series = data["Time Series (Daily)"]
@@ -144,7 +153,6 @@ def fetch_stock_data_alpha_vantage(symbol, days=30):
     except Exception as e:
         print(f"❌ [ALPHA] Error fetching {symbol}: {str(e)[:100]}")
         return None
-
 # ========== IMPROVED PATTERN DETECTION FUNCTIONS ==========
 def detect_v_pattern(volumes):
     """
@@ -309,33 +317,66 @@ def ensure_patterns_for_demo(symbol, v_pattern, u_pattern):
     return v_pattern, u_pattern
 
 # ========== API ENDPOINTS ==========
-@app.route('/')
-def home():
+@app.route('/api/test-alpha-vantage', methods=['GET'])
+def test_alpha_vantage():
+    """Test Alpha Vantage connection with multiple exchange suffixes"""
+    test_symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"]
+    results = []
+    
+    for symbol in test_symbols:
+        for exchange in [".BSE", ".NSE", ""]:  # Try different suffixes
+            try:
+                url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}{exchange}&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
+                response = requests.get(url, timeout=10)
+                data = response.json()
+                
+                if "Time Series (Daily)" in data:
+                    dates = list(data["Time Series (Daily)"].keys())[:2]
+                    results.append({
+                        "symbol": symbol,
+                        "exchange": exchange if exchange else "no suffix",
+                        "status": "✅ SUCCESS",
+                        "dates": dates,
+                        "latest_close": data["Time Series (Daily)"][dates[0]]["4. close"]
+                    })
+                    break  # Stop trying other exchanges once successful
+                elif "Note" in data:
+                    if exchange == "":  # Last attempt failed
+                        results.append({
+                            "symbol": symbol,
+                            "exchange": "all tried",
+                            "status": "⚠️ RATE LIMITED",
+                            "note": data["Note"][:80]
+                        })
+                    continue  # Try next exchange
+                else:
+                    if exchange == "":  # Last attempt failed
+                        results.append({
+                            "symbol": symbol,
+                            "exchange": "all tried",
+                            "status": "❌ FAILED",
+                            "error": data.get("Error Message", "No data")
+                        })
+                    continue  # Try next exchange
+                    
+            except Exception as e:
+                if exchange == "":  # Last attempt failed
+                    results.append({
+                        "symbol": symbol,
+                        "exchange": "all tried",
+                        "status": "❌ ERROR",
+                        "error": str(e)[:100]
+                    })
+    
     return jsonify({
-        "service": "IncomePlus Stock Scanner API",
-        "version": "4.0",
-        "environment": os.environ.get('RAILWAY_ENVIRONMENT', 'production'),
-        "demo_mode": DEMO_MODE,
-        "status": "running",
-        "total_stocks_available": len(ALL_INDIAN_STOCKS),
-        "frontend_url": "https://incomeplusin-sys.github.io/incomeplus/",
-        "backend_url": "https://web-production-1b0f1.up.railway.app",
-        "data_source": "Alpha Vantage",
-        "pattern_logic": "IMPROVED - More lenient detection",
-        "alpha_vantage_limits": {
-            "calls_per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
-            "daily_calls": ALPHA_VANTAGE_DAILY_LIMIT
+        "alpha_vantage_test": True,
+        "api_key": "Configured" if ALPHA_VANTAGE_API_KEY and ALPHA_VANTAGE_API_KEY != "DEMO" else "Not configured",
+        "rate_limits": {
+            "per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
+            "daily": ALPHA_VANTAGE_DAILY_LIMIT
         },
-        "endpoints": {
-            "/": "This information",
-            "/api/health": "Health check",
-            "/api/scan": "Scan stocks (GET with ?symbols= or POST JSON)",
-            "/api/scan-all": "Scan all 200+ Indian stocks (paginated)",
-            "/api/scan-batch": "Batch scan (POST with symbols list)",
-            "/api/test": "Test data (no API calls)",
-            "/api/test-patterns": "Test pattern detection logic",
-            "/api/debug-scan/<symbol>": "Debug scan for specific symbol"
-        },
+        "results": results,
+        "recommendation": "Use symbols without .NS suffix in frontend (e.g., 'TCS' not 'TCS.NS')",
         "timestamp": datetime.now().isoformat()
     })
 
