@@ -264,6 +264,17 @@
                 <button class="btn btn-secondary" onclick="testWithSample()">🧪 Test Sample</button>
                 <button class="btn btn-success" onclick="checkAPI()">🔧 Check API</button>
                 <button class="btn btn-danger" onclick="scanAllStocksNow()">⚡ Scan ALL 200+ Stocks</button>
+                 <button class="btn btn-purple" onclick="scanHistorical()">
+                 📜 Scan 6 Months Historical
+</button>
+
+<!-- Add this CSS for purple button -->
+<style>
+    .btn-purple {
+        background: linear-gradient(135deg, #8e44ad 0%, #9b59b6 100%);
+        color: white;
+    }
+</style>
             </div>
             
             <!-- Add pattern info -->
@@ -472,6 +483,143 @@
                 showStatus('Please enter at least one stock symbol.', 'error');
                 return;
             }
+
+            // ========== HISTORICAL PATTERN SCANNER ==========
+async function scanHistorical() {
+    const stocksInput = document.getElementById('stocksInput').value;
+    const symbols = stocksInput.split(',').map(s => s.trim()).filter(s => s);
+    
+    if (symbols.length === 0) {
+        showStatus('Enter stocks to scan', 'error');
+        return;
+    }
+    
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('loadingText').textContent = '📜 Scanning 6 months historical data...';
+    document.getElementById('loadingDetail').textContent = 'Analyzing with strict pattern rules...';
+    
+    try {
+        const encodedSymbols = encodeURIComponent(symbols.join(','));
+        const response = await fetch(`${API_BASE}/api/scanner/historical?symbols=${encodedSymbols}&months=6&current_week=true`);
+        
+        const data = await response.json();
+        document.getElementById('loading').style.display = 'none';
+        
+        if (data.success) {
+            displayHistoricalResults(data);
+        } else {
+            showStatus('Historical scan failed: ' + (data.error || 'Unknown'), 'error');
+        }
+    } catch (error) {
+        document.getElementById('loading').style.display = 'none';
+        showStatus('Error: ' + error.message, 'error');
+    }
+}
+
+function displayHistoricalResults(data) {
+    const container = document.getElementById('advancedResultsCard');
+    const body = document.getElementById('advancedResultsBody');
+    const noResultsEl = document.getElementById('advancedNoResults');
+    const countEl = document.getElementById('advancedResultCount');
+    const typesEl = document.getElementById('patternTypes');
+    
+    // Hide all results initially
+    body.style.display = 'block';
+    noResultsEl.style.display = 'none';
+    
+    if (!data.all_patterns || data.all_patterns.length === 0) {
+        body.style.display = 'none';
+        noResultsEl.style.display = 'block';
+        countEl.textContent = '0';
+        typesEl.textContent = '-';
+        container.style.display = 'block';
+        showStatus('No historical patterns found.', 'error');
+        return;
+    }
+    
+    // Count pattern types
+    const patternTypes = [...new Set(data.all_patterns.map(p => p.pattern_type))];
+    typesEl.textContent = patternTypes.join(', ');
+    countEl.textContent = data.total_patterns_found;
+    document.getElementById('advancedScanTime').textContent = new Date().toLocaleTimeString();
+    
+    // Clear previous results
+    body.innerHTML = '';
+    
+    // Sort: current week first, then by pattern quality
+    const sortedPatterns = [...data.all_patterns].sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return a.days_ago - b.days_ago;
+    });
+    
+    // Add each pattern
+    sortedPatterns.forEach(pattern => {
+        const row = document.createElement('tr');
+        
+        // Pattern icon and color
+        let patternIcon = '📊';
+        let patternColor = '#6c757d';
+        let patternName = pattern.pattern_type.replace('_', ' ');
+        
+        if (pattern.pattern_type === 'U_PATTERN') {
+            patternIcon = '🟡';
+            patternColor = '#28a745';
+        } else if (pattern.pattern_type === 'V_PATTERN') {
+            patternIcon = '🔻';
+            patternColor = '#ffc107';
+        }
+        
+        // Highlight current week
+        let highlightStyle = '';
+        if (pattern.is_current_week) {
+            highlightStyle = 'background: #fff3cd; border-left: 4px solid #ffc107;';
+        }
+        
+        // Extra info text
+        let extraInfo = '';
+        if (pattern.pattern_type === 'U_PATTERN') {
+            extraInfo = `Drop: ${pattern.volume_details.drop_percent}% | Rise: ${pattern.volume_details.recovery_percent}%`;
+        } else if (pattern.pattern_type === 'V_PATTERN') {
+            extraInfo = `Drop: ${pattern.volume_details.drop_percent}% | Rise: ${pattern.volume_details.recovery_percent}%`;
+        }
+        
+        // When text
+        let whenText = `${pattern.days_ago} days ago`;
+        if (pattern.is_current_week) whenText = 'THIS WEEK ⭐';
+        else if (pattern.is_current_month) whenText = 'This month';
+        
+        row.innerHTML = `
+            <td><strong>${pattern.symbol}</strong></td>
+            <td style="color: ${patternColor}; font-weight: bold;">
+                ${patternIcon} ${patternName}
+            </td>
+            <td>${pattern.pattern_length} candles</td>
+            <td>${whenText}</td>
+            <td>
+                ${pattern.start_date} to ${pattern.end_date}<br>
+                <small style="color: #666;">${pattern.days_ago} days ago</small>
+            </td>
+            <td style="color: ${pattern.price_details.future_price_change > 0 ? '#28a745' : '#dc3545'}; font-weight: bold;">
+                ${pattern.price_details.future_price_change > 0 ? '↗️' : '↘️'} 
+                ${pattern.price_details.future_price_change}%
+            </td>
+            <td>
+                <small style="color: #666;">${extraInfo}</small><br>
+                <small>Quality: ${pattern.pattern_quality}</small>
+            </td>
+        `;
+        
+        if (pattern.is_current_week) {
+            row.style.cssText = highlightStyle;
+        }
+        
+        body.appendChild(row);
+    });
+    
+    // Show the container
+    container.style.display = 'block';
+    showStatus(`✅ Found ${data.total_patterns_found} historical patterns! ${data.current_week_patterns ? '⭐ ' + data.current_week_patterns.length + ' in current week' : ''}`, 'success');
+}
             
             // Show loading
             document.getElementById('loading').style.display = 'block';
@@ -828,3 +976,4 @@
     </script>
 </body>
 </html>
+
