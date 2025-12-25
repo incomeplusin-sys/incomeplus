@@ -485,37 +485,65 @@
             }
 
             // ========== HISTORICAL PATTERN SCANNER ==========
+// ========== HISTORICAL SCANNER FUNCTION ==========
 async function scanHistorical() {
     const stocksInput = document.getElementById('stocksInput').value;
     const symbols = stocksInput.split(',').map(s => s.trim()).filter(s => s);
     
     if (symbols.length === 0) {
-        showStatus('Enter stocks to scan', 'error');
+        showStatus('Please enter at least one stock symbol.', 'error');
         return;
     }
     
+    // Show loading
     document.getElementById('loading').style.display = 'block';
-    document.getElementById('loadingText').textContent = '📜 Scanning 6 months historical data...';
-    document.getElementById('loadingDetail').textContent = 'Analyzing with strict pattern rules...';
+    document.getElementById('advancedResultsCard').style.display = 'none';
+    document.getElementById('resultsCard').style.display = 'none';
+    document.getElementById('loadingText').textContent = '📜 Scanning 6 Months Historical Data...';
+    showStatus('Starting historical pattern scan...', 'success');
     
     try {
-        const encodedSymbols = encodeURIComponent(symbols.join(','));
-        const response = await fetch(`${API_BASE}/api/scanner/historical?symbols=${encodedSymbols}&months=6&current_week=true`);
+        // Use ONLY working symbols
+        const workingSymbols = symbols.filter(s => 
+            s.includes('RELIANCE') || s.includes('INFY')
+        );
+        
+        if (workingSymbols.length === 0) {
+            throw new Error('No working symbols found. Try RELIANCE.NS or INFY.NS');
+        }
+        
+        const encodedSymbols = encodeURIComponent(workingSymbols.join(','));
+        const response = await fetch(`${API_BASE}/api/scanner/historical?symbols=${encodedSymbols}&months=6`);
+        
+        // Check if response is JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const text = await response.text();
+            console.error('Non-JSON response:', text.substring(0, 200));
+            throw new Error('Server returned HTML instead of JSON. Check API endpoint.');
+        }
         
         const data = await response.json();
         document.getElementById('loading').style.display = 'none';
         
         if (data.success) {
+            lastScanTime = new Date().toLocaleTimeString();
+            document.getElementById('lastUpdate').textContent = 'Last updated: ' + lastScanTime;
+            document.getElementById('advancedScanTime').textContent = lastScanTime;
+            
+            // Display historical results in the advanced results section
             displayHistoricalResults(data);
         } else {
-            showStatus('Historical scan failed: ' + (data.error || 'Unknown'), 'error');
+            showStatus('Historical scan failed: ' + (data.error || 'Unknown error'), 'error');
         }
+        
     } catch (error) {
         document.getElementById('loading').style.display = 'none';
         showStatus('Error: ' + error.message, 'error');
     }
 }
 
+// ========== DISPLAY HISTORICAL RESULTS ==========
 function displayHistoricalResults(data) {
     const container = document.getElementById('advancedResultsCard');
     const body = document.getElementById('advancedResultsBody');
@@ -537,6 +565,96 @@ function displayHistoricalResults(data) {
         return;
     }
     
+    // Count pattern types
+    const patternTypes = [...new Set(data.all_patterns.map(p => p.pattern_type))];
+    typesEl.textContent = patternTypes.join(', ');
+    countEl.textContent = data.total_patterns_found;
+    document.getElementById('advancedScanTime').textContent = new Date().toLocaleTimeString();
+    
+    // Clear previous results
+    body.innerHTML = '';
+    
+    // Sort: current week first, then by pattern quality
+    const sortedPatterns = [...data.all_patterns].sort((a, b) => {
+        if (a.is_current_week && !b.is_current_week) return -1;
+        if (!a.is_current_week && b.is_current_week) return 1;
+        return a.days_ago - b.days_ago;
+    });
+    
+    // Add each pattern
+    sortedPatterns.forEach(pattern => {
+        const row = document.createElement('tr');
+        
+        // Pattern icon and color
+        let patternIcon = '📊';
+        let patternColor = '#6c757d';
+        let patternName = pattern.pattern_type.replace('_', ' ');
+        
+        if (pattern.pattern_type === 'U_PATTERN') {
+            patternIcon = '🟡';
+            patternColor = '#28a745';
+        } else if (pattern.pattern_type === 'V_PATTERN') {
+            patternIcon = '🔻';
+            patternColor = '#ffc107';
+        }
+        
+        // Highlight current week
+        if (pattern.is_current_week) {
+            row.style.cssText = 'background: #fff3cd; border-left: 4px solid #ffc107;';
+        }
+        
+        // Extra info text
+        let extraInfo = '';
+        if (pattern.pattern_type === 'U_PATTERN') {
+            extraInfo = `Drop: ${pattern.volume_details.drop_percent}% | Rise: ${pattern.volume_details.recovery_percent}%`;
+        } else if (pattern.pattern_type === 'V_PATTERN') {
+            extraInfo = `Drop: ${pattern.volume_details.drop_percent}% | Rise: ${pattern.volume_details.recovery_percent}%`;
+        }
+        
+        // When text
+        let whenText = `${pattern.days_ago} days ago`;
+        if (pattern.is_current_week) whenText = 'THIS WEEK ⭐';
+        else if (pattern.is_current_month) whenText = 'This month';
+        
+        // Price trend icon
+        const futureChange = pattern.price_details.future_price_change;
+        const priceIcon = futureChange > 0 ? '↗️' : '↘️';
+        const priceColor = futureChange > 0 ? '#28a745' : '#dc3545';
+        
+        row.innerHTML = `
+            <td><strong>${pattern.symbol}</strong></td>
+            <td style="color: ${patternColor}; font-weight: bold;">
+                ${patternIcon} ${patternName}
+            </td>
+            <td>${pattern.pattern_length} candles</td>
+            <td>${whenText}</td>
+            <td>
+                ${pattern.start_date} to ${pattern.end_date}<br>
+                <small style="color: #666;">${pattern.days_ago} days ago</small>
+            </td>
+            <td style="color: ${priceColor}; font-weight: bold;">
+                ${priceIcon} ${futureChange}%
+            </td>
+            <td>
+                <small style="color: #666;">${extraInfo}</small><br>
+                <small>Quality: ${pattern.pattern_quality}</small>
+            </td>
+        `;
+        
+        body.appendChild(row);
+    });
+    
+    // Show the container
+    container.style.display = 'block';
+    
+    // Show success message
+    const currentWeekCount = data.current_week_patterns ? data.current_week_patterns.length : 0;
+    let successMsg = `✅ Found ${data.total_patterns_found} historical patterns!`;
+    if (currentWeekCount > 0) {
+        successMsg += ` ⭐ ${currentWeekCount} in current week`;
+    }
+    showStatus(successMsg, 'success');
+}    
     // Count pattern types
     const patternTypes = [...new Set(data.all_patterns.map(p => p.pattern_type))];
     typesEl.textContent = patternTypes.join(', ');
@@ -976,4 +1094,5 @@ function displayHistoricalResults(data) {
     </script>
 </body>
 </html>
+
 
