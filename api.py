@@ -910,58 +910,6 @@ def test_scan():
         "timestamp": datetime.now().isoformat()
     })
 
-# ========== ALPHA VANTAGE TEST ENDPOINT ==========
-@app.route('/api/test-alpha-vantage', methods=['GET'])
-def test_alpha_vantage():
-    """Test Alpha Vantage connection"""
-    test_symbols = ["RELIANCE", "TCS", "INFY"]
-    results = []
-    
-    for symbol in test_symbols:
-        try:
-            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}.BSE&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
-            response = requests.get(url, timeout=10)
-            data = response.json()
-            
-            if "Time Series (Daily)" in data:
-                dates = list(data["Time Series (Daily)"].keys())[:2]
-                results.append({
-                    "symbol": symbol,
-                    "status": "✅ SUCCESS",
-                    "dates": dates,
-                    "latest_close": data["Time Series (Daily)"][dates[0]]["4. close"]
-                })
-            elif "Note" in data:
-                results.append({
-                    "symbol": symbol,
-                    "status": "⚠️ RATE LIMITED",
-                    "note": data["Note"][:80]
-                })
-            else:
-                results.append({
-                    "symbol": symbol,
-                    "status": "❌ FAILED",
-                    "error": data.get("Error Message", "No data")
-                })
-                
-        except Exception as e:
-            results.append({
-                "symbol": symbol,
-                "status": "❌ ERROR",
-                "error": str(e)[:100]
-            })
-    
-    return jsonify({
-        "alpha_vantage_test": True,
-        "api_key": "Configured" if ALPHA_VANTAGE_API_KEY and ALPHA_VANTAGE_API_KEY != "DEMO" else "Not configured",
-        "rate_limits": {
-            "per_minute": ALPHA_VANTAGE_RATE_LIMIT_PER_MINUTE,
-            "daily": ALPHA_VANTAGE_DAILY_LIMIT
-        },
-        "results": results,
-        "timestamp": datetime.now().isoformat()
-    })
-
 # ========== START THE SERVER ==========
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
