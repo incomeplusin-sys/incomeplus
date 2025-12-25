@@ -156,9 +156,8 @@ def fetch_stock_data_alpha_vantage(symbol, days=30):
 # ========== IMPROVED PATTERN DETECTION FUNCTIONS ==========
 def detect_v_pattern(volumes):
     """
-    IMPROVED V-pattern detection
+    MORE LENIENT V-pattern detection for real-world data
     Looks for: High → Medium → LOW → Medium → High pattern
-    More lenient to find real patterns
     """
     if len(volumes) < 5:
         return False
@@ -168,67 +167,42 @@ def detect_v_pattern(volumes):
     # Find which day has minimum volume
     min_day = np.argmin(last_5)
     
-    # For V-pattern, day 2 (index 2) should be minimum OR day 3
-    if min_day not in [2, 3]:
+    # For V-pattern, day 1, 2, or 3 should be minimum (more lenient)
+    if min_day not in [1, 2, 3]:
         return False
     
-    # Check if volumes increase after the minimum
-    if min_day == 2:
-        # Pattern: day0 → day1 → MIN(day2) → day3↑ → day4↑
-        conditions = [
-            last_5[3] > last_5[2] * 1.05,  # Day 3 at least 5% higher than Day 2
-            last_5[4] > last_5[3] * 1.02,  # Day 4 at least 2% higher than Day 3
-            last_5[2] < last_5[0] * 0.8,   # Day 2 at least 20% lower than Day 0
-            last_5[2] < last_5[1] * 0.8,   # Day 2 at least 20% lower than Day 1
-        ]
-    else:  # min_day == 3
-        # Pattern: day0 → day1 → day2 → MIN(day3) → day4↑
-        conditions = [
-            last_5[4] > last_5[3] * 1.1,   # Day 4 at least 10% higher than Day 3
-            last_5[3] < last_5[1] * 0.7,   # Day 3 significantly lower than Day 1
-            last_5[3] < last_5[2] * 0.9,   # Day 3 lower than Day 2
-        ]
+    # Calculate percentage changes
+    start_vol = last_5[0]
+    min_vol = last_5[min_day]
+    end_vol = last_5[-1]
     
-    return all(conditions)
-
-def detect_u_pattern(volumes):
-    """
-    IMPROVED U-pattern detection
-    Looks for gradual decrease then increase
-    """
-    if len(volumes) < 6:
+    # Calculate drop percentage
+    drop_pct = ((start_vol - min_vol) / start_vol * 100) if start_vol > 0 else 0
+    recovery_pct = ((end_vol - min_vol) / min_vol * 100) if min_vol > 0 else 0
+    
+    # LENIENT RULES for real data:
+    # 1. Minimum volume should be at least 15% lower than start
+    # 2. Recovery should be at least 10% from minimum
+    # 3. Volume should generally increase after minimum
+    
+    if drop_pct < 15:  # Not enough drop
         return False
     
-    last_6 = volumes[-6:]
-    
-    # Find minimum volume in the middle (days 2, 3, or 4)
-    middle_days = last_6[2:5]
-    min_middle_idx = np.argmin(middle_days) + 2  # Adjust index
-    
-    # The minimum should be in the middle (not at edges)
-    if min_middle_idx not in [2, 3, 4]:
+    if recovery_pct < 10:  # Not enough recovery
         return False
     
-    # Check gradual decrease to minimum
-    decrease_ok = True
-    for i in range(1, min_middle_idx + 1):
-        if last_6[i] > last_6[i-1] * 1.1:  # Not decreasing
-            decrease_ok = False
-            break
+    # Check if volumes generally increase after the minimum
+    if min_day < 4:  # If minimum is not the last day
+        post_min_volumes = last_5[min_day+1:]
+        increasing = all(post_min_volumes[i] >= post_min_volumes[i-1] * 0.9 
+                        for i in range(1, len(post_min_volumes)))
+        if not increasing:
+            return False
     
-    # Check gradual increase from minimum
-    increase_ok = True
-    for i in range(min_middle_idx + 1, 6):
-        if last_6[i] < last_6[i-1] * 0.95:  # Not increasing
-            increase_ok = False
-            break
+    # V-pattern found!
+    print(f"🎯 V-PATTERN DETECTED: Drop {drop_pct:.1f}%, Recovery {recovery_pct:.1f}%")
+    return True
     
-    # Minimum should be significantly lower than start
-    min_volume = last_6[min_middle_idx]
-    return (decrease_ok and increase_ok and 
-            min_volume < last_6[0] * 0.7 and 
-            min_volume < last_6[1] * 0.7)
-
 # ========== HELPER FUNCTIONS ==========
 def normalize_symbol(symbol):
     """Try different symbol formats for Alpha Vantage"""
