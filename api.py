@@ -5,17 +5,76 @@ UPDATED VERSION: Now uses Alpha Vantage API instead of yfinance
 """
 
 import os
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+import time
+import requests
+import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-import requests
-import warnings
-warnings.filterwarnings('ignore')
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from datetime import datetime
 
 app = Flask(__name__)
+CORS(app)
 
+# --- 1. THE "ANTI-BLOCK" SESSION ---
+def get_safe_session():
+    """Tricks Yahoo into thinking Railway is a real browser"""
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    })
+    return session
+
+# --- 2. DATA FETCHER WITH RATE LIMITING ---
+def fetch_stock_data(symbol):
+    session = get_safe_session()
+    try:
+        # We wait 1 second before every call to be safe on Railway
+        time.sleep(1) 
+        ticker = yf.Ticker(symbol, session=session)
+        df = ticker.history(period="1mo")
+        return df if not df.empty else None
+    except Exception as e:
+        print(f"Error fetching {symbol}: {e}")
+        return None
+
+# --- 3. PATTERN LOGIC ---
+def detect_v_pattern(volumes):
+    if len(volumes) < 5: return False
+    last_5 = volumes[-5:]
+    min_idx = np.argmin(last_5)
+    # Lenient V-shape: dip must be in the middle 3 days
+    if min_idx not in [1, 2, 3]: return False
+    
+    drop = (last_5[0] - last_5[min_idx]) / last_5[0]
+    recovery = (last_5[-1] - last_5[min_idx]) / last_5[min_idx]
+    return drop > 0.15 and recovery > 0.10
+
+@app.route('/api/scan', methods=['GET'])
+def scan():
+    symbols_param = request.args.get('symbols', 'RELIANCE.NS,TCS.NS')
+    symbols = [s.strip() for s in symbols_param.split(',')]
+    
+    results = []
+    for s in symbols[:10]: # Limit to 10 per request for speed
+        df = fetch_stock_data(s)
+        if df is not None:
+            v_pat = detect_v_pattern(df['Volume'].values)
+            results.append({
+                "symbol": s,
+                "price": round(df['Close'].iloc[-1], 2),
+                "v_pattern": v_pat,
+                "volume": int(df['Volume'].iloc[-1])
+            })
+    
+    return jsonify({"success": True, "results": results})
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
+    
 # ========== ENHANCED CORS SETTINGS FOR GITHUB PAGES ==========
 CORS(app, resources={
     r"/*": {
