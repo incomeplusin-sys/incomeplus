@@ -238,15 +238,23 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>💰 IncomePlus</h1>
+        <header> 
+    <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px;">
+        <img src="./images/logo.png" 
+             alt="IncomePlus Logo" 
+             style="height: 70px; width: 70px; border-radius: 12px; background: white; padding: 8px;">
+        <div>
+            <h1 style="margin: 0; font-size: 2.8rem;">IncomePlus</h1>
             <p class="subtitle">Advanced Stock Volume Pattern Scanner</p>
-            <div class="api-status">
-                <strong>📡 API Status:</strong> 
-                <span id="apiStatus">Checking...</span>
-            </div>
-        </header>
-        
+        </div>
+    </div>
+    
+    <!-- KEEP YOUR EXISTING api-status DIV -->
+    <div class="api-status">
+        <strong>📡 API Status:</strong> 
+        <span id="apiStatus">Checking...</span>
+    </div>
+</header>        
         <div class="card">
             <h2>🔍 Volume Pattern Scanner</h2>
             <p>Scan Indian stocks for V and U volume patterns using Yahoo Finance data.</p>
@@ -1027,6 +1035,7 @@ document.addEventListener('keydown', function(e) {
     
 </body>
 </html>
+
 
 
 
