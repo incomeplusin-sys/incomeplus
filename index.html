@@ -238,23 +238,28 @@
 </head>
 <body>
     <div class="container">
-        <header> 
-    <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px;">
+       <header style="padding: 40px 30px 30px 30px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; text-align: center;">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 25px; margin-bottom: 20px;">
+        <!-- Your Logo - Change 100 to desired size -->
         <img src="./images/logo.png" 
              alt="IncomePlus Logo" 
-             style="height: 70px; width: 70px; border-radius: 12px; background: white; padding: 8px;">
-        <div>
-            <h1 style="margin: 0; font-size: 2.8rem;">IncomePlus</h1>
-            <p class="subtitle">Advanced Stock Volume Pattern Scanner</p>
+             style="height: 100px; width: 100px; border-radius: 12px; background: white; padding: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">
+        
+        <div style="text-align: left;">
+            <h1 style="font-size: 2.8rem; margin: 0 0 8px 0; color: white;">IncomePlus</h1>
+            <p style="font-size: 1.2rem; opacity: 0.9; margin: 0; color: #e6e6ff;">
+                Stock Volume Pattern Scanner
+            </p>
         </div>
     </div>
     
-    <!-- KEEP YOUR EXISTING api-status DIV -->
+    <!-- Keep your API status div here -->
     <div class="api-status">
         <strong>📡 API Status:</strong> 
         <span id="apiStatus">Checking...</span>
     </div>
-</header>        
+</header>
+        
         <div class="card">
             <h2>🔍 Volume Pattern Scanner</h2>
             <p>Scan Indian stocks for V and U volume patterns using Yahoo Finance data.</p>
@@ -1035,6 +1040,7 @@ document.addEventListener('keydown', function(e) {
     
 </body>
 </html>
+
 
 
 
