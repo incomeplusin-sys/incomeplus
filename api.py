@@ -37,11 +37,27 @@ def get_token_info(symbol, segment="NSE"):
 
 def get_session():
     try:
-        smartApi = SmartConnect(api_key=os.getenv('API_KEY'))
-        totp = pyotp.TOTP(os.getenv('TOTP_SECRET')).now()
-        data = smartApi.generateSession(os.getenv('CLIENT_CODE'), os.getenv('PASSWORD'), totp)
-        return smartApi if data['status'] else None
-    except: return None
+        # CLEANING: .strip() removes accidental spaces, .upper() ensures correct case
+        api_key = os.getenv('AOUtmyst').strip()
+        client_code = os.getenv('AABZ050479').strip().upper()
+        password = os.getenv('0204').strip() # Your 4-digit MPIN
+        totp_secret = os.getenv('GWO7RQCDT7VAAOQZOLE4AL7HGY').strip().replace(" ", "")
+
+        smartApi = SmartConnect(api_key=api_key)
+        # Generate the 6-digit code from the secret
+        totp_code = pyotp.TOTP(totp_secret).now()
+        
+        data = smartApi.generateSession(client_code, password, totp_code)
+        
+        if data.get('status'):
+            print(f"✅ Login Successful for {client_code}")
+            return smartApi
+        else:
+            print(f"❌ Login Failed: {data.get('message')}")
+            return None
+    except Exception as e:
+        print(f"⚠️ Session Error: {str(e)}")
+        return None
 
 def detect_patterns(df):
     if len(df) < 20: return False, False, False
