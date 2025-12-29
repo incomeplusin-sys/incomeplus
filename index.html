@@ -67,11 +67,12 @@
     </div>
 
     <div class="controls">
-        <select id="timeframeSelect" class="btn btn-time">
-            <option value="ONE_DAY">Daily Timeframe</option>
-            <option value="ONE_HOUR">60 Minute (Hourly)</option>
-            <option value="FIFTEEN_MINUTE">15 Minute (Intraday)</option>
-        </select>
+        <select id="sectorSelect" class="btn btn-time">
+    <option value="EQUITY">Equity (Cash)</option>
+    <option value="INDEX_FUT">Index Futures (Current/Next/Far)</option>
+    <option value="STOCK_FUT">Stock Futures (Top 5)</option>
+</select>
+        
         <button class="btn btn-scan" onclick="runAdvancedScan()">🚀 START REAL-TIME SCAN</button>
         <button class="btn btn-save" onclick="downloadCSV()">💾 SAVE RESULTS (CSV)</button>
     </div>
@@ -206,3 +207,4 @@
 
 </body>
 </html>
+
