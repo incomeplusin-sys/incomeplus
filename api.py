@@ -88,11 +88,38 @@ def detect_patterns(df):
 @app.route('/scan', methods=['POST'])
 def scan():
     sector = request.json.get('sector', 'EQUITY')
-    timeframe = request.json.get('timeframe', 'ONE_DAY')
+    timeframe = request.json.get('timeframe', 'ONE_DAY') # Now receiving timeframe from UI
     obj = get_session()
     
     if not obj: 
-        return jsonify({"status": "error", "message": "API Login Failed. Check MPIN/TOTP."})
+        return jsonify({"status": "error", "message": "API Login Failed."})
+
+    targets = []
+    
+    if sector == "STOCK_FUT":
+        # DYNAMIC: Get ALL unique symbols in the F&O segment (approx 190-200+ stocks)
+        fo_symbols = SCRIP_MASTER[SCRIP_MASTER['instrumenttype'] == 'FUTSTK']['name'].unique().tolist()
+        for s in fo_symbols:
+            targets += get_futures_for_symbol(s) # This gets the Current Month for each
+            
+    elif sector == "INDEX_FUT":
+        for s in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]:
+            targets += get_futures_for_symbol(s)
+            
+    else: # EQUITY (Cash)
+        # For Equity, we can scan the Nifty 50 or a specific high-volume list
+        cash_list = ["RELIANCE-EQ", "TCS-EQ", "SBIN-EQ", "INFY-EQ", "HDFCBANK-EQ"] # Add more as needed
+        for s in cash_list:
+            try:
+                res = SCRIP_MASTER[SCRIP_MASTER['symbol'] == s].iloc[0]
+                targets.append({"s": s, "ex": "NSE", "token": res['token'], "label": "Cash"})
+            except: continue
+
+    # ... [Rest of your date and pattern detection logic] ...
+
+    if not obj: 
+    return jsonify({"status": "error", "message": "API Login Failed. Check MPIN/TOTP."})
+
 
     # --- TARGET GENERATION (ALL SECTORS APPLIED) ---
     targets = []
