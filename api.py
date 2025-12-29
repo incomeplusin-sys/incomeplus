@@ -10,7 +10,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# --- GLOBAL DATA STORE (ALL PREVIOUS FIXES APPLIED) ---
+# --- GLOBAL DATA STORE ---
 SCRIP_MASTER = None
 ACTIVE_SESSION = None
 IST = pytz.timezone('Asia/Kolkata')
@@ -28,7 +28,7 @@ def fetch_scrip_master():
         print(f"❌ Scrip Master Error: {e}")
 
 def get_session():
-    """FIX: Direct Login with your verified credentials & 3-attempt retry"""
+    """FIX: Direct Login with your verified credentials"""
     global ACTIVE_SESSION
     if ACTIVE_SESSION:
         try:
@@ -38,7 +38,6 @@ def get_session():
             print("🔄 Session expired. Re-connecting...")
 
     try:
-        # --- YOUR VERIFIED CREDENTIALS (HARDCODED FOR STABILITY) ---
         api_key = "AOUtmyst"
         client_code = "AABZ050479"
         password = "0204"
@@ -48,7 +47,6 @@ def get_session():
         for attempt in range(3):
             totp_code = pyotp.TOTP(totp_secret).now()
             data = smartApi.generateSession(client_code, password, totp_code)
-            
             if data.get('status'):
                 print(f"✅ API LIVE: Connected as {client_code}")
                 ACTIVE_SESSION = smartApi
@@ -60,16 +58,14 @@ def get_session():
         return None
 
 def get_futures_for_symbol(base_name):
-    """NEW FEATURE: Dynamic Current/Next/Far Expiry Discovery"""
+    """Dynamic Current Month Future Lookup"""
     try:
         df = SCRIP_MASTER[(SCRIP_MASTER['name'] == base_name) & 
                           (SCRIP_MASTER['instrumenttype'].isin(['FUTSTK', 'FUTIDX']))].copy()
         df['expiry'] = pd.to_datetime(df['expiry'])
-        df = df.sort_values(by='expiry').head(3)
+        df = df.sort_values(by='expiry').head(1) # Get Current Month
         
-        labels = ["Current", "Next", "Far"]
-        return [{"s": row['symbol'], "ex": "NFO", "token": row['token'], "label": labels[i]} 
-                for i, (_, row) in enumerate(df.iterrows())]
+        return [{"s": row['symbol'], "ex": "NFO", "token": row['token'], "label": "FUT"}]
     except: return []
 
 def detect_patterns(df):
@@ -79,7 +75,7 @@ def detect_patterns(df):
     avg_vol = sum(vols[-20:]) / 20
     curr_vol = vols[-1]
     
-    is_valid = curr_vol > avg_vol # VMA check
+    is_valid = curr_vol > avg_vol
     v_pat = is_valid and (vols[-3] > vols[-2] and vols[-1] > vols[-2])
     u_pat = is_valid and (vols[-4] > vols[-3] and vols[-3] > vols[-2] and vols[-1] > vols[-2])
     p_pat = is_valid and (vols[-2] > vols[-3] and vols[-2] > vols[-1])
@@ -88,47 +84,26 @@ def detect_patterns(df):
 @app.route('/scan', methods=['POST'])
 def scan():
     sector = request.json.get('sector', 'EQUITY')
-    timeframe = request.json.get('timeframe', 'ONE_DAY') # Now receiving timeframe from UI
+    timeframe = request.json.get('timeframe', 'ONE_DAY')
     obj = get_session()
     
-
-if not obj: 
-        return jsonify({"status": "error", "message": "API Login Failed."})
+    # --- INDENTATION FIXED HERE ---
+    if not obj: 
+        return jsonify({"status": "error", "message": "API Login Failed. Check MPIN/TOTP."})
 
     targets = []
     
+    # --- TARGET LOGIC (ALL 200+ F&O STOCKS ENABLED) ---
     if sector == "STOCK_FUT":
-        # DYNAMIC: Get ALL unique symbols in the F&O segment (approx 190-200+ stocks)
         fo_symbols = SCRIP_MASTER[SCRIP_MASTER['instrumenttype'] == 'FUTSTK']['name'].unique().tolist()
         for s in fo_symbols:
-            targets += get_futures_for_symbol(s) # This gets the Current Month for each
+            targets += get_futures_for_symbol(s)
             
     elif sector == "INDEX_FUT":
         for s in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]:
             targets += get_futures_for_symbol(s)
             
     else: # EQUITY (Cash)
-        # For Equity, we can scan the Nifty 50 or a specific high-volume list
-        cash_list = ["RELIANCE-EQ", "TCS-EQ", "SBIN-EQ", "INFY-EQ", "HDFCBANK-EQ"] # Add more as needed
-        for s in cash_list:
-            try:
-                res = SCRIP_MASTER[SCRIP_MASTER['symbol'] == s].iloc[0]
-                targets.append({"s": s, "ex": "NSE", "token": res['token'], "label": "Cash"})
-            except: continue
-
-    # ... [Rest of your date and pattern detection logic] ...
-
-    if not obj: 
-    return jsonify({"status": "error", "message": "API Login Failed. Check MPIN/TOTP."})
-
-
-    # --- TARGET GENERATION (ALL SECTORS APPLIED) ---
-    targets = []
-    if sector == "INDEX_FUT":
-        for s in ["NIFTY", "BANKNIFTY", "FINNIFTY"]: targets += get_futures_for_symbol(s)
-    elif sector == "STOCK_FUT":
-        for s in ["RELIANCE", "HDFCBANK", "SBIN", "ICICIBANK", "INFY", "TCS"]: targets += get_futures_for_symbol(s)
-    else: # EQUITY
         equity_list = ["RELIANCE-EQ", "SBIN-EQ", "TCS-EQ", "INFY-EQ", "HDFCBANK-EQ"]
         for s in equity_list:
             try:
@@ -136,7 +111,7 @@ if not obj:
                 targets.append({"s": s, "ex": "NSE", "token": res['token'], "label": "Cash"})
             except: continue
 
-    # --- HISTORICAL/OFFLINE DATE LOGIC (45 DAY LOOKBACK) ---
+    # --- ANYTIME/OFFLINE LOGIC ---
     now_ist = datetime.now(IST)
     from_date = (now_ist - timedelta(days=45)).strftime('%Y-%m-%d %H:%M')
     to_date = now_ist.strftime('%Y-%m-%d %H:%M')
@@ -157,10 +132,12 @@ if not obj:
                         "v_pat": v, "u_pat": u, "p_pat": p, "vma_status": "Bullish"
                     })
         except: continue
+        
     return jsonify({"status": "success", "data": final_results})
 
 @app.route('/health')
-def health(): return jsonify({"status": "online", "api": SCRIP_MASTER is not None})
+def health(): 
+    return jsonify({"status": "online", "api_connected": ACTIVE_SESSION is not None})
 
 if __name__ == '__main__':
     fetch_scrip_master()
