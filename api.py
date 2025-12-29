@@ -2,6 +2,7 @@ import os
 import requests
 import pandas as pd
 import pyotp
+import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from SmartApi import SmartConnect
@@ -36,25 +37,29 @@ def get_token_info(symbol, segment="NSE"):
     except: return None
 
 def get_session():
+    """Handles professional login with automatic retries for Railway"""
     try:
-        # CLEANING: .strip() removes accidental spaces, .upper() ensures correct case
-        api_key = os.getenv('AOUtmyst').strip()
-        client_code = os.getenv('AABZ050479').strip().upper()
-        password = os.getenv('0204').strip() # Your 4-digit MPIN
-        totp_secret = os.getenv('GWO7RQCDT7VAAOQZOLE4AL7HGY').strip().replace(" ", "")
+        # CORRECTED: Fetching by the VARIABLE NAME (Key) set in Railway
+        api_key = os.getenv('API_KEY').strip()
+        client_code = os.getenv('CLIENT_CODE').strip().upper()
+        password = os.getenv('PASSWORD').strip() 
+        totp_secret = os.getenv('TOTP_SECRET').strip().replace(" ", "")
 
         smartApi = SmartConnect(api_key=api_key)
-        # Generate the 6-digit code from the secret
-        totp_code = pyotp.TOTP(totp_secret).now()
         
-        data = smartApi.generateSession(client_code, password, totp_code)
+        # Retry loop to handle time-drift on cloud servers
+        for attempt in range(3):
+            totp_code = pyotp.TOTP(totp_secret).now()
+            data = smartApi.generateSession(client_code, password, totp_code)
+            
+            if data.get('status'):
+                print(f"✅ Login Successful for {client_code}")
+                return smartApi
+            else:
+                print(f"⚠️ Attempt {attempt+1} failed: {data.get('message')}")
+                time.sleep(2)
         
-        if data.get('status'):
-            print(f"✅ Login Successful for {client_code}")
-            return smartApi
-        else:
-            print(f"❌ Login Failed: {data.get('message')}")
-            return None
+        return None
     except Exception as e:
         print(f"⚠️ Session Error: {str(e)}")
         return None
@@ -75,7 +80,7 @@ def health():
     return jsonify({
         "status": "online",
         "timestamp": datetime.now().isoformat(),
-        "message": "Scanner is active and connected to NSE"
+        "api_connected": True if SCRIP_MASTER is not None else False
     })
 
 @app.route('/scan', methods=['POST'])
@@ -83,8 +88,11 @@ def scan():
     sector = request.json.get('sector', 'EQUITY')
     timeframe = request.json.get('timeframe', 'ONE_DAY')
     obj = get_session()
-    if not obj: return jsonify({"status": "error", "message": "Auth Failed"})
     
+    if not obj: 
+        return jsonify({"status": "error", "message": "Auth Failed: Check Railway Variables"})
+    
+    # Define Targets based on Sector
     if sector == "INDEX_FUT":
         targets = [{"s": "NIFTY29JAN26FUT", "ex": "NFO"}, {"s": "BANKNIFTY29JAN26FUT", "ex": "NFO"}]
     elif sector == "STOCK_FUT":
@@ -114,6 +122,7 @@ def scan():
                         "vma_status": "Bullish" if df['volume'].iloc[-1] > (df['volume'].astype(float).tail(20).mean()) else "Neutral"
                     })
         except: continue
+        
     return jsonify({"status": "success", "data": final_results})
 
 if __name__ == '__main__':
