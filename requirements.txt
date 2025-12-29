@@ -2,6 +2,9 @@ flask
 flask-cors
 smartapi-python
 pyotp
+python-dotenv
 pandas
 numpy
+logzero
+websocket-client
 gunicorn
