@@ -91,7 +91,8 @@ def scan():
     timeframe = request.json.get('timeframe', 'ONE_DAY') # Now receiving timeframe from UI
     obj = get_session()
     
-    if not obj: 
+
+if not obj: 
         return jsonify({"status": "error", "message": "API Login Failed."})
 
     targets = []
