@@ -1,107 +1,144 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>IncomePlus Pro | Real-time NSE Stock Volume Pattern Scanner</title>
-<meta name="title" content="IncomePlus Pro | Real-time NSE Stock Volume Pattern Scanner">
-<meta name="description" content="Free real-time NSE stock scanner for U-patterns, V-patterns, and Pyramid volume breakouts. Powered by Angel One SmartApi for professional intraday traders.">
-<meta name="keywords" content="NSE volume scanner, stock pattern scanner, intraday volume breakout, Angel One API scanner, U pattern stocks, V pattern stocks, Indian stock market tools">
-
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://incomeplusin-sys.github.io/incomeplus/">
-<meta property="og:title" content="IncomePlus Pro | Master Volume Scanner">
-<meta property="og:description" content="Detect high-probability volume patterns in real-time. Use professional tools for free.">
-<meta property="og:image" content="https://incomeplusin-sys.github.io/incomeplus/assets/preview-image.jpg">
-    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IncomePlus Pro - Master Scanner</title>
+    
+    <title>IncomePlus Pro | Real-time NSE Stock Volume Pattern Scanner</title>
+    <meta name="title" content="IncomePlus Pro | Real-time NSE Stock Volume Pattern Scanner">
+    <meta name="description" content="Free real-time NSE stock scanner for U-patterns, V-patterns, and Pyramid volume breakouts. Powered by Angel One SmartApi for professional intraday traders.">
+    <meta name="keywords" content="NSE volume scanner, stock pattern scanner, intraday volume breakout, Angel One API scanner, U pattern stocks, V pattern stocks, Pyramid pattern, Indian stock market tools">
+    <meta name="author" content="IncomePlus">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://incomeplusin-sys.github.io/incomeplus/">
+    <meta property="og:title" content="IncomePlus Pro | Master Volume Scanner">
+    <meta property="og:description" content="Detect high-probability volume patterns in real-time. Professional trading tools for Indian Markets.">
+    <meta property="og:image" content="https://incomeplusin-sys.github.io/incomeplus/og-preview.jpg">
+
     <style>
-        :root { --primary: #1e3c72; --secondary: #2a5298; --success: #28a745; --danger: #dc3545; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f9; margin: 0; padding: 20px; }
-        .container { max-width: 1100px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-        .header { text-align: center; border-bottom: 2px solid #eee; margin-bottom: 20px; padding-bottom: 10px; }
-        .status-bar { display: flex; justify-content: space-between; align-items: center; background: #eef2f7; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; }
-        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 25px; flex-wrap: wrap; }
-        .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; color: white; }
+        :root { --primary: #1e3c72; --secondary: #2a5298; --success: #28a745; --danger: #dc3545; --dark: #343a40; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+        
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #f0f2f5; padding-bottom: 20px; }
+        .header h1 { color: var(--primary); margin: 0; font-size: 2.2em; }
+        
+        .status-bar { display: flex; justify-content: space-between; align-items: center; background: var(--dark); color: white; padding: 15px 25px; border-radius: 10px; margin-bottom: 25px; font-size: 0.9em; }
+        .dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .bg-online { background-color: #28a745; box-shadow: 0 0 8px #28a745; }
+        .bg-offline { background-color: #dc3545; }
+
+        .controls { display: flex; gap: 15px; justify-content: center; margin-bottom: 30px; flex-wrap: wrap; }
+        .btn { padding: 12px 28px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; transition: all 0.3s ease; color: white; display: flex; align-items: center; gap: 8px; }
         .btn-scan { background: var(--primary); }
         .btn-save { background: var(--success); }
-        .btn-time { background: #6c757d; }
-        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
-        .online { color: var(--success); }
-        .offline { color: var(--danger); }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #f8f9fa; color: var(--primary); padding: 15px; text-align: left; border-bottom: 2px solid #dee2e6; }
-        td { padding: 15px; border-bottom: 1px solid #eee; }
-        .pattern-tag { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .tag-yes { background: #d4edda; color: #155724; }
-        .tag-no { background: #f8d7da; color: #721c24; }
+        .btn-time { background: #6c757d; font-size: 14px; }
+        .btn:hover { opacity: 0.9; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        
+        select.btn-time { -webkit-appearance: none; padding-right: 35px; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22white%22%20d%3D%22M10.293%203.293L6%207.586%201.707%203.293A1%201%200%2000.293%204.707l5%205a1%201%200%20001.414%200l5-5a1%201%200%2010-1.414-1.414z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 15px center; }
+
+        table { width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; }
+        th { background: #f8f9fa; color: var(--primary); padding: 18px; text-align: left; font-weight: 700; border-bottom: 2px solid #dee2e6; }
+        td { padding: 16px; border-bottom: 1px solid #eee; font-size: 15px; }
+        tr:hover { background-color: #fcfdfe; }
+
+        .tag { padding: 5px 10px; border-radius: 5px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+        .tag-yes { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .tag-no { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; opacity: 0.6; }
+        
+        /* SEO CONTENT SECTION */
+        .seo-section { margin-top: 50px; padding: 30px; background: #fafafa; border-radius: 10px; line-height: 1.8; border: 1px solid #eee; }
+        .seo-section h2 { color: var(--primary); font-size: 1.5em; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="header">
-        <h1>IncomePlus Master Scanner</h1>
-        <p>Real-time Angel One SmartApi Integration</p>
+        <h1>IncomePlus Master Volume Scanner</h1>
+        <p>Advanced Real-time Analytics for NSE Stocks</p>
     </div>
 
     <div class="status-bar">
-        <div>📡 API: <span id="apiStatus" class="offline">Checking Connection...</span></div>
-        <div>⏰ Timeframe: <span id="currentTimeframe">ONE_DAY</span></div>
-        <div>🕒 Refresh in: <span id="timer">60</span>s</div>
+        <div><span id="statusDot" class="dot bg-offline"></span> API: <span id="apiStatusText">CONNECTING...</span></div>
+        <div>TIMEZONE: IST (India)</div>
+        <div>DATA SOURCE: Angel One SmartApi</div>
     </div>
 
     <div class="controls">
-        <select id="timeframeSelect" class="btn btn-time" style="color:white; background:#6c757d; padding:10px;">
-            <option value="ONE_DAY">Daily</option>
-            <option value="ONE_HOUR">1 Hour</option>
-            <option value="FIFTEEN_MINUTE">15 Minute</option>
+        <select id="timeframeSelect" class="btn btn-time">
+            <option value="ONE_DAY">Daily Timeframe</option>
+            <option value="ONE_HOUR">60 Minute (Hourly)</option>
+            <option value="FIFTEEN_MINUTE">15 Minute (Intraday)</option>
         </select>
-        <button class="btn btn-scan" onclick="runAdvancedScan()">🚀 Start Advanced Scan</button>
-        <button class="btn btn-save" onclick="downloadCSV()">💾 Save Results (CSV)</button>
+        <button class="btn btn-scan" onclick="runAdvancedScan()">🚀 START REAL-TIME SCAN</button>
+        <button class="btn btn-save" onclick="downloadCSV()">💾 SAVE RESULTS (CSV)</button>
     </div>
 
-    <div id="resultsWrapper" style="display:none;">
+    <div id="resultsWrapper">
         <table id="resultsTable">
             <thead>
                 <tr>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>Change %</th>
-                    <th>V-Pattern</th>
-                    <th>U-Pattern</th>
-                    <th>Pyramid</th>
-                    <th>VMA Status</th>
+                    <th>STOCK SYMBOL</th>
+                    <th>LTP (₹)</th>
+                    <th>CHG %</th>
+                    <th>V-PATTERN</th>
+                    <th>U-PATTERN</th>
+                    <th>PYRAMID</th>
+                    <th>VMA STATUS</th>
                 </tr>
             </thead>
-            <tbody id="tableBody"></tbody>
+            <tbody id="tableBody">
+                </tbody>
         </table>
     </div>
+
+    <section class="seo-section">
+        <h2>Professional NSE Volume Pattern Detection</h2>
+        <p>Welcome to <strong>IncomePlus Pro</strong>, the premier tool for identifying high-probability trading setups in the Indian Stock Market. Our scanner utilizes the <strong>Angel One SmartApi</strong> to provide real-time volume analysis across multiple timeframes.</p>
+        
+        <h3>Core Volume Patterns Explained:</h3>
+        <ul>
+            <li><strong>V-Pattern:</strong> Identifies "Valley" formations where volume decreases and then surges, indicating a strong reversal.</li>
+            <li><strong>U-Pattern:</strong> Detects accumulation phases where volume follows a smooth rounded bottom before a breakout.</li>
+            <li><strong>Pyramid Pattern:</strong> Spotlights "Mountain" volume surges where activity peaks and price begins its momentum move.</li>
+        </ul>
+        <p>Every signal is validated using a <strong>20-Day Volume Moving Average (VMA)</strong>, ensuring that you only focus on stocks with significant institutional interest and high liquidity.</p>
+    </section>
 </div>
 
 <script>
+    // YOUR RAILWAY URL
     const API_URL = "https://web-production-561f3.up.railway.app";
-    let timeLeft = 60;
 
-    async function checkStatus() {
+    async function checkHealth() {
         try {
             const res = await fetch(`${API_URL}/health`);
-            if(res.ok) {
-                document.getElementById('apiStatus').innerText = "ONLINE ✅";
-                document.getElementById('apiStatus').className = "online";
+            const data = await res.json();
+            const text = document.getElementById('apiStatusText');
+            const dot = document.getElementById('statusDot');
+            
+            if(data.api_connected) {
+                text.innerText = "LIVE (CONNECTED TO NSE)";
+                dot.className = "dot bg-online";
+            } else {
+                text.innerText = "DEMO MODE (LOGIN REQUIRED)";
+                dot.className = "dot bg-offline";
             }
         } catch (e) {
-            document.getElementById('apiStatus').innerText = "OFFLINE ❌ (Ensure Railway is Active)";
-            document.getElementById('apiStatus').className = "offline";
+            document.getElementById('apiStatusText').innerText = "SERVER OFFLINE";
         }
     }
 
     async function runAdvancedScan() {
         const tf = document.getElementById('timeframeSelect').value;
-        document.getElementById('currentTimeframe').innerText = tf;
-        
+        const btn = document.querySelector('.btn-scan');
+        btn.innerText = "SCANNING...";
+        btn.disabled = true;
+
         try {
-            const res = await fetch(`${API_URL}/scan`, { 
+            const res = await fetch(`${API_URL}/scan`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ timeframe: tf })
@@ -110,59 +147,62 @@
             const body = document.getElementById('tableBody');
             body.innerHTML = '';
 
+            if(result.data.length === 0) {
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No patterns detected in current timeframe.</td></tr>';
+            }
+
             result.data.forEach(stock => {
                 body.innerHTML += `
                     <tr>
                         <td><strong>${stock.ticker}</strong></td>
                         <td>₹${stock.price}</td>
-                        <td style="color:${stock.change >= 0 ? 'green' : 'red'}">${stock.change}%</td>
-                        <td><span class="pattern-tag ${stock.v_pat ? 'tag-yes' : 'tag-no'}">${stock.v_pat ? '✅ YES' : '❌ NO'}</span></td>
-                        <td><span class="pattern-tag ${stock.u_pat ? 'tag-yes' : 'tag-no'}">${stock.u_pat ? '✅ YES' : '❌ NO'}</span></td>
-                        <td><span class="pattern-tag ${stock.p_pat ? 'tag-yes' : 'tag-no'}">${stock.p_pat ? '✅ YES' : '❌ NO'}</span></td>
-                        <td>${stock.vma_status || 'Above Avg'}</td>
+                        <td style="color:${stock.change >= 0 ? '#28a745' : '#dc3545'}">${stock.change}%</td>
+                        <td><span class="tag ${stock.v_pat ? 'tag-yes' : 'tag-no'}">${stock.v_pat ? 'YES' : 'NO'}</span></td>
+                        <td><span class="tag ${stock.u_pat ? 'tag-yes' : 'tag-no'}">${stock.u_pat ? 'YES' : 'NO'}</span></td>
+                        <td><span class="tag ${stock.p_pat ? 'tag-yes' : 'tag-no'}">${stock.p_pat ? 'YES' : 'NO'}</span></td>
+                        <td><b style="color:var(--primary)">${stock.vma_status}</b></td>
                     </tr>`;
             });
-            document.getElementById('resultsWrapper').style.display = 'block';
+
+            // PERSISTENCE: Save to local storage
+            localStorage.setItem('lastScan', JSON.stringify(result.data));
+
         } catch (e) {
-            alert("Scan failed. Check console for details.");
+            alert("Scan Error: Make sure your Railway server is Active and Angel One credentials are correct.");
+        } finally {
+            btn.innerText = "🚀 START REAL-TIME SCAN";
+            btn.disabled = false;
         }
     }
 
     function downloadCSV() {
-        let csv = "Symbol,Price,Change,V-Pattern,U-Pattern,Pyramid\n";
+        let csv = "Symbol,Price,Change%,V-Pattern,U-Pattern,Pyramid,VMA_Status\n";
         const rows = document.querySelectorAll("#tableBody tr");
         rows.forEach(row => {
             const cols = row.querySelectorAll("td");
-            let rowData = Array.from(cols).map(c => c.innerText.replace('✅ ', '').replace('❌ ', '')).join(",");
-            csv += rowData + "\n";
+            if(cols.length > 1) {
+                let rowData = Array.from(cols).map(c => c.innerText.replace('YES', '1').replace('NO', '0')).join(",");
+                csv += rowData + "\n";
+            }
         });
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `IncomePlus_Scan_${new Date().getTime()}.csv`;
+        a.setAttribute('href', url);
+        a.setAttribute('download', `IncomePlus_Scan_${new Date().toLocaleDateString()}.csv`);
         a.click();
     }
 
-    // Timer Logic
-    setInterval(() => {
-        timeLeft--;
-        document.getElementById('timer').innerText = timeLeft;
-        if(timeLeft <= 0) { timeLeft = 60; checkStatus(); }
-    }, 1000);
-
-    window.onload = checkStatus;
+    // Load last scan on page open
+    window.onload = () => {
+        checkHealth();
+        const saved = localStorage.getItem('lastScan');
+        if(saved) {
+            // Option to populate table with last results can go here
+            console.log("Found previous scan data in local storage.");
+        }
+    };
 </script>
+
 </body>
 </html>
-
-<section id="seo-content" style="margin-top: 50px; padding: 20px; color: #444; line-height: 1.6;">
-    <h2>Why Use the IncomePlus Volume Pattern Scanner?</h2>
-    <p>Our <strong>real-time NSE stock scanner</strong> is designed for traders who follow the <strong>IncomePlus strategy</strong>. By analyzing volume breakouts using professional-grade data from the <strong>Angel One SmartApi</strong>, we help you identify three core high-probability patterns:</p>
-    <ul>
-        <li><strong>V-Pattern:</strong> Ideal for identifying sudden reversals where volume dips and then surges symmetrically.</li>
-        <li><strong>U-Pattern:</strong> Perfect for spotting accumulation phases with strictly descending and then ascending volume.</li>
-        <li><strong>Pyramid Pattern:</strong> The ultimate breakout indicator where volume builds to a peak before a price move.</li>
-    </ul>
-    <p>This tool is essential for <strong>intraday trading</strong> in the Indian stock market, covering top NSE symbols with multi-timeframe support including 15-minute and hourly scans.</p>
-</section>
