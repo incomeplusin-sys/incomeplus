@@ -12,22 +12,9 @@
     <meta property="og:title" content="IncomePlus Master Volume Scanner">
     <meta property="og:description" content="Advanced algorithmic scanning for volume-based breakouts in Equity and Futures. Works 24/7 with historical data.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://your-app-name.up.railway.app">
+    <meta property="og:url" content="https://incomeplusin-sys.github.io/incomeplus/">
     
     <link rel="stylesheet" href="style.css">
-</head>
-
-    <title>IncomePlus Pro | Real-time NSE Stock Volume Pattern Scanner</title>
-    <meta name="title" content="IncomePlus Pro | Real-time NSE Stock Volume Pattern Scanner">
-    <meta name="description" content="Free real-time NSE stock scanner for U-patterns, V-patterns, and Pyramid volume breakouts. Powered by Angel One SmartApi for professional intraday traders.">
-    <meta name="keywords" content="NSE volume scanner, stock pattern scanner, intraday volume breakout, Angel One API scanner, U pattern stocks, V pattern stocks, Pyramid pattern, Indian stock market tools">
-    <meta name="author" content="IncomePlus">
-
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://incomeplusin-sys.github.io/incomeplus/">
-    <meta property="og:title" content="IncomePlus Pro | Master Volume Scanner">
-    <meta property="og:description" content="Detect high-probability volume patterns in real-time. Professional trading tools for Indian Markets.">
-    <meta property="og:image" content="https://incomeplusin-sys.github.io/incomeplus/og-preview.jpg">
 
     <style>
         :root { --primary: #1e3c72; --secondary: #2a5298; --success: #28a745; --danger: #dc3545; --dark: #343a40; }
@@ -60,7 +47,6 @@
         .tag-yes { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .tag-no { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; opacity: 0.6; }
         
-        /* SEO CONTENT SECTION */
         .seo-section { margin-top: 50px; padding: 30px; background: #fafafa; border-radius: 10px; line-height: 1.8; border: 1px solid #eee; }
         .seo-section h2 { color: var(--primary); font-size: 1.5em; }
     </style>
@@ -81,10 +67,16 @@
 
     <div class="controls">
         <select id="sectorSelect" class="btn btn-time">
-    <option value="EQUITY">Equity (Cash)</option>
-    <option value="INDEX_FUT">Index Futures (Current/Next/Far)</option>
-    <option value="STOCK_FUT">Stock Futures (Top 5)</option>
-</select>
+            <option value="EQUITY">Equity (Cash)</option>
+            <option value="INDEX_FUT">Index Futures (Current/Next/Far)</option>
+            <option value="STOCK_FUT">Stock Futures (All 200+ F&O)</option>
+        </select>
+
+        <select id="timeframeSelect" class="btn btn-time">
+            <option value="FIFTEEN_MINUTE">15 Minutes</option>
+            <option value="ONE_HOUR">1 Hour</option>
+            <option value="ONE_DAY" selected>Daily</option>
+        </select>
         
         <button class="btn btn-scan" onclick="runAdvancedScan()">🚀 START REAL-TIME SCAN</button>
         <button class="btn btn-save" onclick="downloadCSV()">💾 SAVE RESULTS (CSV)</button>
@@ -104,7 +96,8 @@
                 </tr>
             </thead>
             <tbody id="tableBody">
-                </tbody>
+                <tr><td colspan="7" style="text-align:center;">Click Start Scan to begin...</td></tr>
+            </tbody>
         </table>
     </div>
 
@@ -123,7 +116,6 @@
 </div>
 
 <script>
-    // YOUR RAILWAY URL
     const API_URL = "https://web-production-561f3.up.railway.app";
 
     async function checkHealth() {
@@ -133,11 +125,11 @@
             const text = document.getElementById('apiStatusText');
             const dot = document.getElementById('statusDot');
             
-            if(data.api_connected) {
+            if(data.status === "online") {
                 text.innerText = "LIVE (CONNECTED TO NSE)";
                 dot.className = "dot bg-online";
             } else {
-                text.innerText = "DEMO MODE (LOGIN REQUIRED)";
+                text.innerText = "API AUTH ERROR";
                 dot.className = "dot bg-offline";
             }
         } catch (e) {
@@ -146,23 +138,30 @@
     }
 
     async function runAdvancedScan() {
-        const tf = document.getElementById('timeframeSelect').value;
+        // GRAB VALUES FROM BOTH DROPDOWNS
+        const sector = document.getElementById('sectorSelect').value;
+        const timeframe = document.getElementById('timeframeSelect').value;
+        
         const btn = document.querySelector('.btn-scan');
-        btn.innerText = "SCANNING...";
+        btn.innerText = "SCANNING " + sector + "...";
         btn.disabled = true;
 
         try {
             const res = await fetch(`${API_URL}/scan`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ timeframe: tf })
+                body: JSON.stringify({ 
+                    sector: sector, 
+                    timeframe: timeframe 
+                })
             });
             const result = await res.json();
             const body = document.getElementById('tableBody');
             body.innerHTML = '';
 
-            if(result.data.length === 0) {
-                body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No patterns detected in current timeframe.</td></tr>';
+            if(!result.data || result.data.length === 0) {
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No patterns detected. Try a different timeframe or sector.</td></tr>';
+                return;
             }
 
             result.data.forEach(stock => {
@@ -178,11 +177,10 @@
                     </tr>`;
             });
 
-            // PERSISTENCE: Save to local storage
             localStorage.setItem('lastScan', JSON.stringify(result.data));
 
         } catch (e) {
-            alert("Scan Error: Make sure your Railway server is Active and Angel One credentials are correct.");
+            alert("Scan Error: Check Railway logs. Ensure API credentials are correct.");
         } finally {
             btn.innerText = "🚀 START REAL-TIME SCAN";
             btn.disabled = false;
@@ -207,17 +205,10 @@
         a.click();
     }
 
-    // Load last scan on page open
     window.onload = () => {
         checkHealth();
-        const saved = localStorage.getItem('lastScan');
-        if(saved) {
-            // Option to populate table with last results can go here
-            console.log("Found previous scan data in local storage.");
-        }
     };
 </script>
 
 </body>
 </html>
-
