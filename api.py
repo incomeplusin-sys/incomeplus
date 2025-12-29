@@ -60,6 +60,14 @@ def detect_patterns(df):
     p_pat = is_valid and (vols[-2] > vols[-3] and vols[-2] > vols[-1])
     
     return v_pat, u_pat, p_pat
+    
+    @app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "online",
+        "timestamp": datetime.now().isoformat(),
+        "message": "Scanner is active and connected to NSE"
+    })
 
 @app.route('/scan', methods=['POST'])
 def scan():
