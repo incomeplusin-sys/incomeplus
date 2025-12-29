@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://incomeplusin-sys.github.io/incomeplus/sitemap.xml
